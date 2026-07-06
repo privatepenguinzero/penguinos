@@ -6,7 +6,11 @@ set -ouex pipefail
 sed -i '/^\[main\]/a max_parallel_downloads=10' /etc/dnf/dnf.conf
 
 ## System apps
-dnf -y install nautilus ghostty mpv gnome-terminal gnome-system-monitor gnome-calculator loupe
+dnf -y install nautilus mpv gnome-terminal gnome-system-monitor gnome-calculator loupe
+
+## Ghostty
+dnf -y copr enable scottames/ghostty
+dnf -y install ghostty
 
 # fully-featured ffmpeg with nonfree components from rpm fusion
 dnf -y install https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
