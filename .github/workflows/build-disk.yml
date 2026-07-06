@@ -112,4 +112,19 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y rclone
+          
+          # 1. Carica i nuovi file (come prima)
           rclone copy $SOURCE_DIR S3:${{ secrets.S3_BUCKET_NAME }}
+          
+          # 2. Pulizia: mantieni solo le 2 ISO più recenti
+          echo "Cleaning up old ISO files, keeping only the 2 newest..."
+          rclone lsf --absolute --files-only --format "tp" S3:${{ secrets.S3_BUCKET_NAME }} | \
+          grep '\.iso$' | \
+          sort | \
+          head -n -2 | \
+          while read -r line; do
+            file=$(echo "$line" | awk '{print $2}')
+            echo "Deleting old ISO: $file"
+            rclone delete "S3:${{ secrets.S3_BUCKET_NAME }}/$file"
+          done
+          echo "Cleanup completed."
