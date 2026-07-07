@@ -45,6 +45,11 @@ curl -Lo /etc/yum.repos.d/nautilus-open-any-terminal.repo \
 # gsettings set com.github.stunkymonkey.nautilus-open-any-terminal terminal kitty
 
 
+# Install BRAVE ORIGIN
+dnf -y install dnf-plugins-core
+dnf -y config-manager --add-repo https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo
+dnf -y install brave-origin
+
 # Install Niri 
 dnf -y install niri 
 
