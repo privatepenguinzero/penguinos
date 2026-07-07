@@ -25,8 +25,10 @@ dnf -y install nautilus mpv gnome-terminal gnome-system-monitor gnome-calculator
 ## Virtualizzazione
 dnf -y install qemu-kvm libvirt virt-install virt-manager
 
+## Terra enable
+dnf -y install --nogpgcheck --repofrompath 'terra,https://repos.fyralabs.com/terra$releasever' terra-release
+
 ## Ghostty
-dnf -y copr enable scottames/ghostty
 dnf -y install ghostty
 
 # fully-featured ffmpeg with nonfree components from rpm fusion
