@@ -112,9 +112,12 @@ sed -i 's/plugins=(git)/plugins=(dnf aliases genpass git zsh-autosuggestions zsh
 sed -i 's/ZSH_THEME="robbyrussell"/ZSH_THEME="jonathan"/' /etc/skel/.zshrc
 # Nota: per rendere zsh la shell di default del nuovo utente serve "chsh" fatto dopo la creazione utente, non in fase di build immagine.
 
-## NetBird
-dnf -y install https://github.com/netbirdio/netbird/releases/latest/download/netbird_linux_amd64.rpm
-systemctl enable netbird.service
+## NetBird (solo il programma, nessuna configurazione automatica)
+NETBIRD_VERSION=$(curl -s https://api.github.com/repos/netbirdio/netbird/releases/latest | grep tag_name | cut -d '"' -f4)
+curl -fLo /tmp/netbird.tar.gz "https://github.com/netbirdio/netbird/releases/download/${NETBIRD_VERSION}/netbird_${NETBIRD_VERSION#v}_linux_amd64.tar.gz"
+tar -xzf /tmp/netbird.tar.gz -C /usr/bin/
+chmod +x /usr/bin/netbird
+rm -f /tmp/netbird.tar.gz
 
 ## Google Fonts (system-wide, non nella home utente che non esiste ancora in fase di build)
 curl -Lo /tmp/google-fonts.zip https://github.com/google/fonts/archive/main.zip
