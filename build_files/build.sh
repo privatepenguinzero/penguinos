@@ -10,9 +10,10 @@ sed -i '/^\[main\]/a fastestmirror=True' /etc/dnf/dnf.conf
 sed -i '/^\[main\]/a defaultyes=True' /etc/dnf/dnf.conf
 
 ## Aggiornamenti automatici
-dnf -y install dnf-automatic
+dnf -y install dnf5-plugin-automatic
+cp /usr/share/dnf5/dnf5-plugins/automatic.conf /etc/dnf/automatic.conf
 sed -i 's/apply_updates = no/apply_updates = yes/' /etc/dnf/automatic.conf
-systemctl enable dnf-automatic.timer
+systemctl enable dnf5-automatic.timer
 
 ## SSH server
 dnf -y install openssh-server
