@@ -113,7 +113,8 @@ sed -i 's/ZSH_THEME="robbyrussell"/ZSH_THEME="jonathan"/' /etc/skel/.zshrc
 # Nota: per rendere zsh la shell di default del nuovo utente serve "chsh" fatto dopo la creazione utente, non in fase di build immagine.
 
 ## NetBird
-curl -fsSL https://pkgs.netbird.io/install.sh | sh
+dnf -y install https://github.com/netbirdio/netbird/releases/latest/download/netbird_linux_amd64.rpm
+systemctl enable netbird.service
 
 ## Google Fonts (system-wide, non nella home utente che non esiste ancora in fase di build)
 curl -Lo /tmp/google-fonts.zip https://github.com/google/fonts/archive/main.zip
@@ -122,8 +123,14 @@ unzip -q /tmp/google-fonts.zip -d /usr/share/fonts/google
 rm -f /tmp/google-fonts.zip
 fc-cache -f
 
-#### Enable podman
+## Nerd Font  Ghostty (JetBrainsMono Nerd Font)
+mkdir -p /usr/share/fonts/JetBrainsMonoNerdFont
+curl -fLo /tmp/JetBrainsMono.zip https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip
+unzip -q /tmp/JetBrainsMono.zip -d /usr/share/fonts/JetBrainsMonoNerdFont
+rm -f /tmp/JetBrainsMono.zip
+fc-cache -f
 
+#### Enable podman
 systemctl enable podman.socket
 
 # Remove waybar
