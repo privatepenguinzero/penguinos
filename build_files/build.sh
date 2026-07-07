@@ -23,7 +23,7 @@ systemctl enable sshd
 dnf -y install nautilus mpv gnome-terminal gnome-system-monitor gnome-calculator loupe mc btop rsync tmux fastfetch unzip git wget curl
 
 ## Virtualizzazione
-dnf5 -y group install virtualization
+dnf -y install qemu-kvm libvirt virt-install virt-manager
 
 ## Ghostty
 dnf -y copr enable scottames/ghostty
@@ -35,8 +35,7 @@ dnf -y install ffmpeg x264-libs --allowerasing
 
 # Codec multimediali extra (equivalente di "dnf swap ffmpeg-free ffmpeg" + @multimedia + @sound-and-video)
 dnf -y swap ffmpeg-free ffmpeg --allowerasing
-dnf5 -y group upgrade multimedia --setopt="install_weak_deps=False" --exclude=PackageKit-gstreamer-plugin
-dnf5 -y group upgrade sound-and-video
+dnf -y install gstreamer1-plugins-good gstreamer1-plugins-bad-free gstreamer1-plugins-bad-freeworld gstreamer1-plugins-ugly gstreamer1-libav --allowerasing --setopt="install_weak_deps=False" --exclude=PackageKit-gstreamer-plugin
 
 # Nautilus open any terminal extension
 curl -Lo /etc/yum.repos.d/nautilus-open-any-terminal.repo \
