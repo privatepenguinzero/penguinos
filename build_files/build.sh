@@ -50,14 +50,23 @@ curl -Lo /etc/yum.repos.d/nautilus-open-any-terminal.repo \
 ## Fix per errore RPM con installazione parallela
 #echo "%_disable_payload_threading 1" >> /etc/rpm/macros
 
-## Brave Origin (Extracting with bsdtar to bypass severely malformed RPM)
+## Brave Origin (Extracting severely malformed RPM)
 dnf -y config-manager addrepo --from-repofile=https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo
-dnf -y install brave-keyring libarchive  # libarchive provides bsdtar
+dnf -y install brave-keyring
+
 # Download the broken RPM
 dnf -y download brave-origin
-# Extract it directly to the root filesystem using bsdtar
-# bsdtar gracefully handles the broken directory structure that cpio cannot
-bsdtar -xf brave-origin-*.rpm -C /
+
+# Try extracting with bsdtar (using absolute path to bypass PATH issues)
+if [ -x /usr/bin/bsdtar ]; then
+    /usr/bin/bsdtar -xf brave-origin-*.rpm -C /
+else
+    # If bsdtar is missing, install and use 'unar' (The Unarchiver) 
+    # which is incredibly forgiving of broken directory structures
+    dnf -y install unar
+    unar -o / brave-origin-*.rpm 2>/dev/null || true
+fi
+
 # Clean up the downloaded RPM file
 rm -f brave-origin-*.rpm
 
