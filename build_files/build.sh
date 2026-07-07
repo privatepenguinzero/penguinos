@@ -126,7 +126,7 @@ EOF
 dnf -y install codium
 
 ## Zsh + Oh My Zsh (installati nello skeleton, verranno usati dai nuovi utenti)
-dnf -y install zsh
+dnf -y install zsh zoxide fzf
 git clone https://github.com/ohmyzsh/ohmyzsh.git /etc/skel/.oh-my-zsh
 cp /etc/skel/.oh-my-zsh/templates/zshrc.zsh-template /etc/skel/.zshrc
 git clone https://github.com/zsh-users/zsh-autosuggestions /etc/skel/.oh-my-zsh/custom/plugins/zsh-autosuggestions
@@ -135,7 +135,12 @@ git clone https://github.com/zsh-users/zsh-history-substring-search /etc/skel/.o
 git clone https://github.com/zsh-users/zsh-syntax-highlighting.git /etc/skel/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting
 sed -i 's/plugins=(git)/plugins=(dnf aliases genpass git zsh-autosuggestions zsh-autocomplete zsh-history-substring-search z zsh-syntax-highlighting)/' /etc/skel/.zshrc
 sed -i 's/ZSH_THEME="robbyrussell"/ZSH_THEME="jonathan"/' /etc/skel/.zshrc
-# Nota: per rendere zsh la shell di default del nuovo utente serve "chsh" fatto dopo la creazione utente, non in fase di build immagine.
+echo 'eval "$(zoxide init zsh --cmd cd)"' >> /etc/skel/.zshrc
+
+## LazyVim (Neovim distribution)
+dnf -y install neovim ripgrep fd-find lazygit xclip wl-clipboard gcc gcc-c++ make
+git clone https://github.com/LazyVim/starter /etc/skel/.config/nvim
+rm -rf /etc/skel/.config/nvim/.git
 
 ## NetBird (solo il programma, nessuna configurazione automatica)
 NETBIRD_VERSION=$(curl -s https://api.github.com/repos/netbirdio/netbird/releases/latest | grep tag_name | cut -d '"' -f4)
