@@ -26,6 +26,7 @@ dnf -y install nautilus mpv gnome-terminal gnome-system-monitor gnome-calculator
 dnf -y install qemu-kvm libvirt virt-install virt-manager
 
 ## Terra enable
+dnf5 config-manager setopt terra.enabled=1 2>/dev/null || \
 dnf -y install --nogpgcheck --repofrompath 'terra,https://repos.fyralabs.com/terra$releasever' terra-release
 
 ## Ghostty
