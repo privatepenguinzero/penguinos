@@ -46,8 +46,7 @@ curl -Lo /etc/yum.repos.d/nautilus-open-any-terminal.repo \
 
 
 # Install BRAVE ORIGIN
-dnf -y install dnf-plugins-core
-dnf -y config-manager addrepo --from-repofile=https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo
+curl -fsSLo /etc/yum.repos.d/brave-browser.repo https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo
 dnf -y install brave-origin
 
 # Install Niri 
