@@ -44,9 +44,11 @@ curl -Lo /etc/yum.repos.d/nautilus-open-any-terminal.repo \
 # glib-compile-schemas /usr/share/glib-2.0/schemas
 # gsettings set com.github.stunkymonkey.nautilus-open-any-terminal terminal kitty
 
+## Fix per errore RPM con installazione parallela
+echo "%_disable_payload_threading 1" >> /etc/rpm/macros
 
-# Install BRAVE ORIGIN
-curl -fsSLo /etc/yum.repos.d/brave-browser.repo https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo
+## Brave Origin
+dnf -y config-manager addrepo --from-repofile=https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo
 dnf -y install brave-origin
 
 # Install Niri 
