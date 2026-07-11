@@ -27,89 +27,92 @@ dnf -y install qemu-kvm libvirt virt-install virt-manager
 
 ## Terra enable
 dnf5 config-manager setopt terra.enabled=1 2>/dev/null || \
-dnf -y install --nogpgcheck --repofrompath 'terra,https://repos.fyralabs.com/terra$releasever' terra-release
+    dnf -y install --nogpgcheck --repofrompath 'terra,https://repos.fyralabs.com/terra$releasever' terra-release
 
 ## Ghostty
 dnf -y install ghostty
 
-# fully-featured ffmpeg with nonfree components from rpm fusion
+# fully-featured ffmpeg con componenti non-free da rpm fusion
 dnf -y install https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
 dnf -y install ffmpeg x264-libs --allowerasing
 
-# Codec multimediali extra (equivalente di "dnf swap ffmpeg-free ffmpeg" + @multimedia + @sound-and-video)
+# Codec multimediali extra
 dnf -y swap ffmpeg-free ffmpeg --allowerasing
 dnf -y install gstreamer1-plugins-good gstreamer1-plugins-bad-free gstreamer1-plugins-bad-freeworld gstreamer1-plugins-ugly gstreamer1-libav --allowerasing --setopt="install_weak_deps=False" --exclude=PackageKit-gstreamer-plugin
 
 # Nautilus open any terminal extension
 curl -Lo /etc/yum.repos.d/nautilus-open-any-terminal.repo \
-  https://copr.fedorainfracloud.org/coprs/monkeygold/nautilus-open-any-terminal/repo/fedora-$(rpm -E %fedora)/monkeygold-nautilus-open-any-terminal-fedora-$(rpm -E %fedora).repo
+    https://copr.fedorainfracloud.org/coprs/monkeygold/nautilus-open-any-terminal/repo/fedora-$(rpm -E %fedora)/monkeygold-nautilus-open-any-terminal-fedora-$(rpm -E %fedora).repo
 # dnf install -y nautilus-open-any-terminal
 # glib-compile-schemas /usr/share/glib-2.0/schemas
 # gsettings set com.github.stunkymonkey.nautilus-open-any-terminal terminal kitty
 
-## Fix per errore RPM con installazione parallela
-#echo "%_disable_payload_threading 1" >> /etc/rpm/macros
-
 ## Brave Origin (Extracting severely malformed RPM)
 dnf -y config-manager addrepo --from-repofile=https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo
 dnf -y install brave-keyring
-
-# Download the broken RPM
 dnf -y download brave-origin
 
-# Try extracting with bsdtar (using absolute path to bypass PATH issues)
 if [ -x /usr/bin/bsdtar ]; then
     /usr/bin/bsdtar -xf brave-origin-*.rpm -C /
 else
-    # If bsdtar is missing, install and use 'unar' (The Unarchiver) 
-    # which is incredibly forgiving of broken directory structures
     dnf -y install unar
     unar -o / brave-origin-*.rpm 2>/dev/null || true
 fi
-
-# Clean up the downloaded RPM file
 rm -f brave-origin-*.rpm
 
-# Install Niri 
-dnf -y install niri 
+# Install Niri
+dnf -y install niri
 
 curl -Lo /etc/yum.repos.d/peterwu.repo \
-  https://copr.fedorainfracloud.org/coprs/peterwu/rendezvous/repo/fedora-$(rpm -E %fedora)/peterwu-rendezvous-fedora-$(rpm -E %fedora).repo
+    https://copr.fedorainfracloud.org/coprs/peterwu/rendezvous/repo/fedora-$(rpm -E %fedora)/peterwu-rendezvous-fedora-$(rpm -E %fedora).repo
 dnf -y install bibata-cursor-themes
 
-# # Install Noctalia shell
-# curl -fsSL https://github.com/terrapkg/subatomic-repos/raw/main/terra.repo -o /etc/yum.repos.d/terra.repo
-# dnf -y install terra-release
-# dnf -y install noctalia-shell 
-# # ABILITARE LE NOTIFICHE: systemctl --user enable --now swaync.service
-
-# Install Dank Linux shell
+# Install Dank Linux shell (DMS)
 curl --output-dir "/etc/yum.repos.d/" \
-  --remote-name "https://copr.fedorainfracloud.org/coprs/avengemedia/dms/repo/fedora-$(rpm -E %fedora)/avengemedia-dms-fedora-$(rpm -E %fedora).repo"
-dnf -y install quickshell dms greetd dms-greeter --allowerasing 
-#
-# Install greetd login manager with dank configuration (still needs some work)
+    --remote-name "https://copr.fedorainfracloud.org/coprs/avengemedia/dms/repo/fedora-$(rpm -E %fedora)/avengemedia-dms-fedora-$(rpm -E %fedora).repo"
+dnf -y install quickshell dms greetd dms-greeter --allowerasing
+
+## --- SETUP GREETD/DMS (sezione corretta) ---
+
+# Config greetd
 mkdir -p /etc/greetd/
 cat > /etc/greetd/config.toml << EOF
 [terminal]
 vt = 1
+
 [default_session]
 user = "greeter"
 command = "dms-greeter --command niri"
 EOF
+
+# Disabilita esplicitamente gdm PRIMA di impostare greetd come display manager
+# (evita che restino due DM abilitati in conflitto)
+systemctl disable gdm.service 2>/dev/null || true
+
+# Imposta greetd come display manager al posto di gdm
 rm -f /etc/systemd/system/display-manager.service
 ln -s /usr/lib/systemd/system/greetd.service /etc/systemd/system/display-manager.service
 systemctl enable --force greetd.service
 
+# Sessione utente di default con niri + dms
 mkdir -p /etc/skel/.config/systemd/user/graphical-session.target.wants
 ln -s /usr/lib/systemd/user/dms.service /etc/skel/.config/systemd/user/graphical-session.target.wants/
+
 mkdir -p /etc/skel/.config/niri/
 cp -rf /ctx/dot_config/niri/config.kdl /etc/skel/.config/niri/
 
+# IMPORTANTE: riallinea il contesto SELinux di tutto ciò che abbiamo creato/modificato a mano.
+# Senza questo, greetd/dms possono venire bloccati da SELinux al boot (schermo nero/hang).
+restorecon -Rv /etc/greetd \
+    /etc/systemd/system/display-manager.service \
+    /etc/skel/.config \
+    /usr/lib/systemd/user/dms.service || true
+
+## --- FINE SETUP GREETD/DMS ---
+
 # DEV packages
 #dnf -y install cargo evtest git input-remapper libevdev-devel libinput-utils python3-devel
-
-# dnf -y install bitwarden-cli 
+# dnf -y install bitwarden-cli
 
 ## VSCodium
 rpmkeys --import https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/-/raw/master/pub.gpg
@@ -156,7 +159,7 @@ unzip -q /tmp/google-fonts.zip -d /usr/share/fonts/google
 rm -f /tmp/google-fonts.zip
 fc-cache -f
 
-## Nerd Font  Ghostty (JetBrainsMono Nerd Font)
+## Nerd Font Ghostty (JetBrainsMono Nerd Font)
 mkdir -p /usr/share/fonts/JetBrainsMonoNerdFont
 curl -fLo /tmp/JetBrainsMono.zip https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip
 unzip -q /tmp/JetBrainsMono.zip -d /usr/share/fonts/JetBrainsMonoNerdFont
@@ -166,15 +169,13 @@ fc-cache -f
 #### Enable podman
 systemctl enable podman.socket
 
-# Remove waybar
-dnf -y remove waybar
+# Remove waybar in modo sicuro, senza trascinare via dipendenze condivise
+dnf -y remove waybar --noautoremove || true
 
 # this is needed for some glib applications
 glib-compile-schemas /usr/share/glib-2.0/schemas/
 
-
 ## CLEAN UP
-# Clean up dnf cache to reduce image size
 dnf5 -y clean all
 rm -rf /run/dnf /run/selinux-policy
 rm -rf /var/lib/dnf
