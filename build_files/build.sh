@@ -108,6 +108,10 @@ restorecon -Rv /etc/greetd \
     /etc/skel/.config \
     /usr/lib/systemd/user/dms.service || true
 
+# Abilita DMS per TUTTI gli utenti (fix definitivo: non dipende più da /etc/skel,
+# quindi funziona anche per utenti già esistenti prima di questo build)
+systemctl --global enable dms.service
+
 ## --- FINE SETUP GREETD/DMS ---
 
 # DEV packages
