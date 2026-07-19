@@ -52,13 +52,23 @@ dnf -y config-manager addrepo --from-repofile=https://brave-browser-rpm-release.
 dnf -y install brave-keyring
 dnf -y download brave-origin
 
-if [ -x /usr/bin/bsdtar ]; then
-    /usr/bin/bsdtar -xf brave-origin-*.rpm -C /
-else
-    dnf -y install unar
-    unar -o / brave-origin-*.rpm 2>/dev/null || true
+# The brave-origin RPM is malformed (cpio mkdir fails on existing /opt).
+# Extract manually using rpm2cpio (always available on Fedora).
+BRAVE_RPM="$(ls brave-origin-*.rpm 2>/dev/null | head -1)"
+if [ -n "$BRAVE_RPM" ]; then
+    mkdir -p /tmp/brave-extract
+    cd /tmp/brave-extract
+    rpm2cpio /"$BRAVE_RPM" 2>/dev/null | cpio -idm 2>/dev/null || true
+
+    # /opt is a broken symlink to /var/opt on Aurora — create target directly
+    mkdir -p /var/opt/brave.com
+    [ -d opt/brave.com/brave-origin ] && cp -rf opt/brave.com/brave-origin /opt/brave.com/
+    [ -d etc ] && cp -rf etc/* /etc/ 2>/dev/null || true
+
+    cd /
+    rm -rf /tmp/brave-extract
 fi
-rm -f brave-origin-*.rpm
+rm -f /brave-origin-*.rpm
 
 # Install Niri
 dnf -y install niri
