@@ -159,6 +159,13 @@ dnf -y install neovim ripgrep fd-find lazygit xclip wl-clipboard gcc gcc-c++ mak
 git clone https://github.com/LazyVim/starter /etc/skel/.config/nvim
 rm -rf /etc/skel/.config/nvim/.git
 
+## Claude Code (CLI AI assistant by Anthropic)
+dnf -y install nodejs npm
+# Bluefin ha /usr/local -> ../var/usrlocal e /root -> var/roothome
+# Entrambi i target potrebbero non esistere
+mkdir -p /var/usrlocal /var/roothome
+npm install -g @anthropic-ai/claude-code
+
 ## NetBird (solo il programma, nessuna configurazione automatica)
 NETBIRD_VERSION=$(curl -s https://api.github.com/repos/netbirdio/netbird/releases/latest | grep tag_name | cut -d '"' -f4)
 curl -fLo /tmp/netbird.tar.gz "https://github.com/netbirdio/netbird/releases/download/${NETBIRD_VERSION}/netbird_${NETBIRD_VERSION#v}_linux_amd64.tar.gz"
