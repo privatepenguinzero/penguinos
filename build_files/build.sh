@@ -2,6 +2,10 @@
 
 set -ouex pipefail
 
+# Bluefin ha /usr/local -> ../var/usrlocal e /root -> var/roothome.
+# Assicuriamoci che i target dei symlink esistano prima che npm/pip/etc. ci scrivano.
+mkdir -p /var/usrlocal/bin /var/usrlocal/lib /var/roothome
+
 ## DNF5 Speedup
 sed -i '/^\[main\]/a max_parallel_downloads=10' /etc/dnf/dnf.conf
 
@@ -20,10 +24,10 @@ dnf -y install openssh-server
 systemctl enable sshd
 
 ## System apps
-dnf -y install nautilus mpv gnome-terminal gnome-system-monitor gnome-calculator loupe mc btop rsync tmux fastfetch unzip git wget curl
+dnf -y install nautilus mpv gnome-terminal gnome-system-monitor gnome-calculator loupe mc btop rsync tmux fastfetch unzip git wget curl bat eza duf jq tealdeer iperf3 just
 
-## Virtualizzazione
-dnf -y install qemu-kvm libvirt virt-install virt-manager
+## Virtualizzazione e containerizzazione
+dnf -y install qemu-kvm libvirt virt-install virt-manager gnome-boxes distrobox podman-compose
 
 ## Terra enable
 dnf5 config-manager setopt terra.enabled=1 2>/dev/null || \
@@ -32,6 +36,9 @@ dnf5 config-manager setopt terra.enabled=1 2>/dev/null || \
 ## Ghostty
 dnf -y install ghostty
 
+## Rust toolchain
+dnf -y install cargo
+
 # fully-featured ffmpeg con componenti non-free da rpm fusion
 dnf -y install https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
 dnf -y install ffmpeg x264-libs --allowerasing
@@ -39,6 +46,16 @@ dnf -y install ffmpeg x264-libs --allowerasing
 # Codec multimediali extra
 dnf -y swap ffmpeg-free ffmpeg --allowerasing
 dnf -y install gstreamer1-plugins-good gstreamer1-plugins-bad-free gstreamer1-plugins-bad-freeworld gstreamer1-plugins-ugly gstreamer1-libav --allowerasing --setopt="install_weak_deps=False" --exclude=PackageKit-gstreamer-plugin
+
+## Python tooling
+dnf -y install python3-pip python3-devel
+# uv (standalone binary)
+curl -LsSf https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-unknown-linux-gnu.tar.gz \
+  | tar xzf - -C /usr/bin --strip-components=1
+chmod +x /usr/bin/uv /usr/bin/uvx
+
+## Utility CLI
+dnf -y install yq bind-utils rpm-build
 
 # Nautilus open any terminal extension
 curl -Lo /etc/yum.repos.d/nautilus-open-any-terminal.repo \
@@ -124,9 +141,12 @@ systemctl --global enable dms.service
 
 ## --- FINE SETUP GREETD/DMS ---
 
-# DEV packages
-#dnf -y install cargo evtest git input-remapper libevdev-devel libinput-utils python3-devel
-# dnf -y install bitwarden-cli
+## App GUI e utilità
+dnf -y install seahorse
+flatpak install -y --noninteractive flathub com.github.tchx84.Flatseal 2>/dev/null || true
+
+## Qt Wayland support
+dnf -y install qt6-qtwayland
 
 ## VSCodium
 rpmkeys --import https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/-/raw/master/pub.gpg
@@ -161,9 +181,6 @@ rm -rf /etc/skel/.config/nvim/.git
 
 ## Claude Code (CLI AI assistant by Anthropic)
 dnf -y install nodejs npm
-# Bluefin ha /usr/local -> ../var/usrlocal e /root -> var/roothome
-# Entrambi i target potrebbero non esistere
-mkdir -p /var/usrlocal /var/roothome
 npm install -g @anthropic-ai/claude-code
 
 ## NetBird (solo il programma, nessuna configurazione automatica)
@@ -186,6 +203,9 @@ curl -fLo /tmp/JetBrainsMono.zip https://github.com/ryanoasis/nerd-fonts/release
 unzip -q /tmp/JetBrainsMono.zip -d /usr/share/fonts/JetBrainsMonoNerdFont
 rm -f /tmp/JetBrainsMono.zip
 fc-cache -f
+
+## Icone e font management
+dnf -y install papirus-icon-theme
 
 #### Enable podman
 systemctl enable podman.socket
