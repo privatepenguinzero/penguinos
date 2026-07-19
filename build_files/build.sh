@@ -67,6 +67,14 @@ curl -Lo /etc/yum.repos.d/nautilus-open-any-terminal.repo \
 ## Brave Origin (Official RPM package)
 dnf -y config-manager addrepo --from-repofile=https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo
 dnf -y install brave-keyring
+
+# On Fedora Atomic, /opt is symlinked to /var/opt, which breaks RPM cpio extraction
+# (the RPM tries to mkdir under /opt and fails because the symlink target differs).
+# Remove the symlink and create /opt as a real directory before installing brave-origin.
+# Also create /var/opt so rpm-ostree can preserve it across deployments.
+rm -f /opt && mkdir /opt
+mkdir -p /var/opt
+
 # Install brave-origin directly via dnf — the package is available and functional
 dnf -y install brave-origin
 
