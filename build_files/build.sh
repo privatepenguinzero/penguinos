@@ -64,28 +64,11 @@ curl -Lo /etc/yum.repos.d/nautilus-open-any-terminal.repo \
 # glib-compile-schemas /usr/share/glib-2.0/schemas
 # gsettings set com.github.stunkymonkey.nautilus-open-any-terminal terminal kitty
 
-## Brave Origin (Extracting severely malformed RPM)
+## Brave Origin (Official RPM package)
 dnf -y config-manager addrepo --from-repofile=https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo
 dnf -y install brave-keyring
-dnf -y download brave-origin
-
-# The brave-origin RPM is malformed (cpio mkdir fails on existing /opt).
-# Extract manually using rpm2cpio (always available on Fedora).
-BRAVE_RPM="$(ls brave-origin-*.rpm 2>/dev/null | head -1)"
-if [ -n "$BRAVE_RPM" ]; then
-    mkdir -p /tmp/brave-extract
-    cd /tmp/brave-extract
-    rpm2cpio /"$BRAVE_RPM" 2>/dev/null | cpio -idm 2>/dev/null || true
-
-    # /opt is a broken symlink to /var/opt on Aurora — create target directly
-    mkdir -p /var/opt/brave.com
-    [ -d opt/brave.com/brave-origin ] && cp -rf opt/brave.com/brave-origin /opt/brave.com/
-    [ -d etc ] && cp -rf etc/* /etc/ 2>/dev/null || true
-
-    cd /
-    rm -rf /tmp/brave-extract
-fi
-rm -f /brave-origin-*.rpm
+# Install brave-origin directly via dnf — the package is available and functional
+dnf -y install brave-origin
 
 # Install Niri
 dnf -y install niri
