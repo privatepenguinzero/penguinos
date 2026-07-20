@@ -143,19 +143,6 @@ systemctl --global enable dms.service
 dnf -y install seahorse
 flatpak install -y --noninteractive flathub com.github.tchx84.Flatseal 2>/dev/null || true
 
-## Brave Origin (Official RPM package)
-dnf -y config-manager addrepo --from-repofile=https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo
-dnf -y install brave-keyring
-
-# On Fedora Atomic, /opt is symlinked to /var/opt, which breaks RPM cpio extraction
-# (the RPM tries to mkdir under /opt and fails because the symlink target differs).
-# Remove the symlink and create /opt as a real directory before installing brave-origin.
-rm -f /opt && mkdir /opt
-mkdir -p /var/opt
-
-# Install brave-origin directly via dnf — the package is available and functional
-dnf -y install brave-origin
-
 ## Qt Wayland support
 dnf -y install qt6-qtwayland
 
