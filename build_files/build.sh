@@ -150,7 +150,7 @@ dnf -y install qt6-qtwayland
 # Install jq for JSON parsing
 dnf -y install jq
 # Get latest Cursor RPM from official API and install
-CURSOR_RPM_URL=$(curl -s https://cursor.com/api/download?platform=linux-x64&releaseTrack=stable | jq -r '.rpmUrl')
+CURSOR_RPM_URL=$(curl -s 'https://cursor.com/api/download?platform=linux-x64&releaseTrack=stable' | jq -r '.rpmUrl')
 if [ -n "$CURSOR_RPM_URL" ]; then
     curl -L -o /tmp/cursor.rpm "$CURSOR_RPM_URL"
     dnf -y install /tmp/cursor.rpm
