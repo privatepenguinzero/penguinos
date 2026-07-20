@@ -147,6 +147,8 @@ flatpak install -y --noninteractive flathub com.github.tchx84.Flatseal 2>/dev/nu
 dnf -y install qt6-qtwayland
 
 ## Cursor (RPM version)
+# Install jq for JSON parsing
+dnf -y install jq
 # Get latest Cursor RPM from official API and install
 CURSOR_RPM_URL=$(curl -s https://cursor.com/api/download?platform=linux-x64&releaseTrack=stable | jq -r '.rpmUrl')
 if [ -n "$CURSOR_RPM_URL" ]; then
