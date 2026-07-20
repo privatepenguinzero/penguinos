@@ -147,16 +147,10 @@ flatpak install -y --noninteractive flathub com.github.tchx84.Flatseal 2>/dev/nu
 dnf -y install qt6-qtwayland
 
 ## Cursor (RPM version)
-rpm --import https://raw.githubusercontent.com/cursor-rpm/cursor-rpm/main/pubkey.gpg
-cat > /etc/yum.repos.d/cursor.repo << 'EOF'
-[cursor]
-name=Cursor
-baseurl=https://raw.githubusercontent.com/cursor-rpm/cursor-rpm/main/releases/$basearch
-enabled=1
-gpgcheck=1
-gpgkey=https://raw.githubusercontent.com/cursor-rpm/cursor-rpm/main/pubkey.gpg
-EOF
-dnf -y install cursor
+# Download and install Cursor RPM from official site
+curl -L -o /tmp/cursor.rpm https://download.cursor.sh/linux/rpm/latest
+dnf -y install /tmp/cursor.rpm
+rm -f /tmp/cursor.rpm
 
 ## Zsh + Oh My Zsh (installati nello skeleton, verranno usati dai nuovi utenti)
 dnf -y install zsh zoxide fzf
