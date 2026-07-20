@@ -29,12 +29,18 @@ dnf -y install nautilus mpv gnome-terminal gnome-system-monitor gnome-calculator
 ## Virtualizzazione e containerizzazione
 dnf -y install qemu-kvm libvirt virt-install virt-manager gnome-boxes distrobox podman-compose
 
+## Imposta hostname di default per l'immagine
+echo "penguinos" > /etc/hostname
+
 ## Terra enable
 dnf5 config-manager setopt terra.enabled=1 2>/dev/null || \
     dnf -y install --nogpgcheck --repofrompath 'terra,https://repos.fyralabs.com/terra$releasever' terra-release
 
 ## Ghostty
 dnf -y install ghostty
+# Ship default Ghostty config to /etc/skel
+mkdir -p /etc/skel/.config/ghostty
+cp -rf /ctx/dot_config/ghostty/config /etc/skel/.config/ghostty/
 
 ## Rust toolchain
 dnf -y install cargo
@@ -60,9 +66,9 @@ dnf -y install yq bind-utils rpm-build
 # Nautilus open any terminal extension
 curl -Lo /etc/yum.repos.d/nautilus-open-any-terminal.repo \
     https://copr.fedorainfracloud.org/coprs/monkeygold/nautilus-open-any-terminal/repo/fedora-$(rpm -E %fedora)/monkeygold-nautilus-open-any-terminal-fedora-$(rpm -E %fedora).repo
-# dnf install -y nautilus-open-any-terminal
-# glib-compile-schemas /usr/share/glib-2.0/schemas
-# gsettings set com.github.stunkymonkey.nautilus-open-any-terminal terminal kitty
+dnf install -y nautilus-open-any-terminal
+glib-compile-schemas /usr/share/glib-2.0/schemas
+gsettings set com.github.stunkymonkey.nautilus-open-any-terminal terminal ghostty
 
 ## Brave Origin (Official RPM package)
 dnf -y config-manager addrepo --from-repofile=https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo
@@ -124,7 +130,8 @@ cp -rf /ctx/dot_config/niri/config.kdl /etc/skel/.config/niri/
 restorecon -Rv /etc/greetd \
     /etc/systemd/system/display-manager.service \
     /etc/skel/.config \
-    /usr/lib/systemd/user/dms.service || true
+    /usr/lib/systemd/user/dms.service \
+    /usr/local/bin/rtk || true
 
 # Abilita DMS per TUTTI gli utenti (fix definitivo: non dipende più da /etc/skel,
 # quindi funziona anche per utenti già esistenti prima di questo build)
@@ -173,6 +180,10 @@ rm -rf /etc/skel/.config/nvim/.git
 ## Claude Code (CLI AI assistant by Anthropic)
 dnf -y install nodejs npm
 npm install -g @anthropic-ai/claude-code
+
+## RTK — Rust Token Killer (token-optimized CLI proxy)
+# Installed alongside Claude Code in /usr/local/bin so it's available system-wide
+curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
 
 ## NetBird (solo il programma, nessuna configurazione automatica)
 NETBIRD_VERSION=$(curl -s https://api.github.com/repos/netbirdio/netbird/releases/latest | grep tag_name | cut -d '"' -f4)

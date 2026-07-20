@@ -1,0 +1,24 @@
+# Ghostty configuration — shipped as default to all users
+# https://ghostty.org/docs/config
+
+# Use JetBrainsMono Nerd Font (installed system-wide)
+font-family = JetBrainsMono Nerd Font
+font-size = 11
+
+# Theme
+theme = catppuccin-mocha
+
+# Window
+background-opacity = 0.95
+window-padding-x = 4
+window-padding-y = 4
+macos-titlebar-style = tabs
+gtk-single-instance = true
+
+# Shell
+shell-integration = zsh
+copy-on-select = clipboard
+
+# Cursor
+cursor-style = bar
+cursor-style-blink = true
