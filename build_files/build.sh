@@ -146,19 +146,17 @@ flatpak install -y --noninteractive flathub com.github.tchx84.Flatseal 2>/dev/nu
 ## Qt Wayland support
 dnf -y install qt6-qtwayland
 
-## VSCodium
-rpmkeys --import https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/-/raw/master/pub.gpg
-cat > /etc/yum.repos.d/vscodium.repo << 'EOF'
-[gitlab.com_paulcarroty_vscodium_repo]
-name=download.vscodium.com
-baseurl=https://download.vscodium.com/rpms/
+## Cursor (RPM version)
+rpm --import https://raw.githubusercontent.com/cursor-rpm/cursor-rpm/main/pubkey.gpg
+cat > /etc/yum.repos.d/cursor.repo << 'EOF'
+[cursor]
+name=Cursor
+baseurl=https://raw.githubusercontent.com/cursor-rpm/cursor-rpm/main/releases/$basearch
 enabled=1
 gpgcheck=1
-repo_gpgcheck=1
-gpgkey=https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/-/raw/master/pub.gpg
-metadata_expire=1h
+gpgkey=https://raw.githubusercontent.com/cursor-rpm/cursor-rpm/main/pubkey.gpg
 EOF
-dnf -y install codium
+dnf -y install cursor
 
 ## Zsh + Oh My Zsh (installati nello skeleton, verranno usati dai nuovi utenti)
 dnf -y install zsh zoxide fzf
