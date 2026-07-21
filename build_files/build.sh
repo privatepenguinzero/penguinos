@@ -19,7 +19,7 @@ add_dnf_option() {
   local opt="$1"
   grep -q "^$opt" "$DNF_CONF" || sed -i "/^\[main\]/a $opt" "$DNF_CONF"
 }
-add_dnf_option "max_parallel_downloads=10"
+add_dnf_option "max_parallel_downloads=3"
 add_dnf_option "fastestmirror=True"
 add_dnf_option "defaultyes=True"
 
@@ -48,7 +48,7 @@ CORE_PKGS=(
   nautilus mpv gnome-terminal gnome-system-monitor gnome-calculator loupe mc btop rsync tmux fastfetch unzip git wget curl bat eza duf jq tealdeer iperf3 just
   qemu-kvm libvirt virt-install virt-manager gnome-boxes distrobox podman-compose
   seahorse qt6-qtwayland
-  ghostty cargo
+  cargo
   yq bind-utils rpm-build
   zsh zoxide fzf
   neovim ripgrep fd-find lazygit xclip wl-clipboard gcc gcc-c++ make
@@ -66,7 +66,7 @@ install_pkg_chunk() {
     # Clean metadata before each attempt to avoid corruption
     dnf5 clean metadata >/dev/null 2>&1 || true
     dnf5 makecache >/dev/null 2>&1 || true
-    if dnf5 -y install --skip-broken "${chunk[@]}"; then
+    if dnf5 -y install --skip-broken --skip-unavailable "${chunk[@]}"; then
       return 0
     else
       log "Attempt $attempt failed, retrying in 20 seconds..."
@@ -143,7 +143,7 @@ cp -rf /ctx/dot_config/ghostty/config /etc/skel/.config/ghostty/
 log "Preparing /opt for Brave"
 rm -f /opt && mkdir -p /opt /var/opt
 log "Adding Brave repository and keyring"
-dnf5 -y config-manager --add-repo https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo
+curl -fsSL https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo -o /etc/yum.repos.d/brave-browser.repo
 if ! dnf5 -y install brave-keyring; then
   log "Failed to install Brave keyring"
 fi
