@@ -54,6 +54,7 @@ CORE_PKGS=(
   neovim ripgrep fd-find lazygit xclip wl-clipboard gcc gcc-c++ make
   nodejs npm
   papirus-icon-theme
+  greetd dms
 )
 
 # Function to install packages with retry
