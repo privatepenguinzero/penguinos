@@ -177,12 +177,15 @@ fi
 # -------------------------------------------------------------------
 log "Setting up Oh My Zsh"
 ZSH_DIR="/etc/skel/.oh-my-zsh"
+export GIT_TERMINAL_PROMPT=0
+export GIT_ASKPASS=true
 git clone --depth 1 https://github.com/ohmyzsh/ohmyzsh.git "$ZSH_DIR"
 cp "$ZSH_DIR/templates/zshrc.zsh-template" /etc/skel/.zshrc
 # Plugins
 for plugin in autosuggestions zsh-autocomplete zsh-history-substring-search zsh-syntax-highlighting; do
   git clone --depth 1 "https://github.com/${plugin/-/}/$plugin.git" "$ZSH_DIR/custom/plugins/$plugin"
 done
+unset GIT_TERMINAL_PROMPT GIT_ASKPASS
 sed -i 's/plugins=(git)/plugins=(dnf aliases genpass git zsh-autosuggestions zsh-autocomplete zsh-history-substring-search z zsh-syntax-highlighting)/' /etc/skel/.zshrc
 sed -i 's/ZSH_THEME="robbyrussell"/ZSH_THEME="jonathan"/' /etc/skel/.zshrc
 echo "eval \"$(zoxide init zsh --cmd cd)\"" >> /etc/skel/.zshrc
