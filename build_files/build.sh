@@ -1,106 +1,238 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-set -ouex pipefail
+# Strict mode with token‑optimized proxy (rtk) build script
+set -euo pipefail
 
-# Bluefin ha /usr/local -> ../var/usrlocal e /root -> var/roothome.
-# Assicuriamoci che i target dei symlink esistano prima che npm/pip/etc. ci scrivano.
+# Helper logging function
+log() {
+  echo "[build.sh] $*"
+}
+
+# Ensure directories required for symlinks exist before package installs
 mkdir -p /var/usrlocal/bin /var/usrlocal/lib /var/roothome
 
-## DNF5 Speedup
-sed -i '/^\[main\]/a max_parallel_downloads=10' /etc/dnf/dnf.conf
+# -------------------------------------------------------------------
+# DNF configuration (idempotent additions)
+# -------------------------------------------------------------------
+DNF_CONF="/etc/dnf/dnf.conf"
+add_dnf_option() {
+  local opt="$1"
+  grep -q "^$opt" "$DNF_CONF" || sed -i "/^\[main\]/a $opt" "$DNF_CONF"
+}
+add_dnf_option "max_parallel_downloads=10"
+add_dnf_option "fastestmirror=True"
+add_dnf_option "defaultyes=True"
 
-## DNF extra options (da fedora_things_to_do.sh)
-sed -i '/^\[main\]/a fastestmirror=True' /etc/dnf/dnf.conf
-sed -i '/^\[main\]/a defaultyes=True' /etc/dnf/dnf.conf
-
-## Aggiornamenti automatici
-dnf -y install dnf5-plugin-automatic
-cp /usr/share/dnf5/dnf5-plugins/automatic.conf /etc/dnf/automatic.conf
+# -------------------------------------------------------------------
+# Automatic updates (dnf5‑plugin‑automatic)
+# -------------------------------------------------------------------
+log "Installing automatic updates plugin"
+if ! dnf5 -y install dnf5-plugin-automatic; then
+  log "Failed to install automatic updates plugin; continuing"
+fi
+cp -f /usr/share/dnf5/dnf5-plugins/automatic.conf /etc/dnf/automatic.conf
 sed -i 's/apply_updates = no/apply_updates = yes/' /etc/dnf/automatic.conf
-systemctl enable dnf5-automatic.timer
+systemctl enable dnf5-automatic.timer || log "Failed to enable automatic timer"
 
-## SSH server
-dnf -y install openssh-server
-systemctl enable sshd
+# -------------------------------------------------------------------
+# Core services
+# -------------------------------------------------------------------
+log "Installing OpenSSH server"
+dnf5 -y install openssh-server && systemctl enable sshd
 
-## System apps
-dnf -y install nautilus mpv gnome-terminal gnome-system-monitor gnome-calculator loupe mc btop rsync tmux fastfetch unzip git wget curl bat eza duf jq tealdeer iperf3 just
+# -------------------------------------------------------------------
+# Package groups – single dnf5 transaction where possible
+# -------------------------------------------------------------------
+log "Installing core desktop and virtualization packages"
+CORE_PKGS=(
+  nautilus mpv gnome-terminal gnome-system-monitor gnome-calculator loupe mc btop rsync tmux fastfetch unzip git wget curl bat eza duf jq tealdeer iperf3 just
+  qemu-kvm libvirt virt-install virt-manager gnome-boxes distrobox podman-compose
+  seahorse qt6-qtwayland
+  ghostty cargo
+  yq bind-utils rpm-build
+  zsh zoxide fzf
+  neovim ripgrep fd-find lazygit xclip wl-clipboard gcc gcc-c++ make
+  nodejs npm
+  papirus-icon-theme
+)
+if ! dnf5 -y install "${CORE_PKGS[@]}"; then
+  log "Core package installation failed"
+  exit 1
+fi
 
-## Virtualizzazione e containerizzazione
-dnf -y install qemu-kvm libvirt virt-install virt-manager gnome-boxes distrobox podman-compose
+# -------------------------------------------------------------------
+# Terra repository (idempotent)
+# -------------------------------------------------------------------
+log "Enabling Terra repository"
+if ! dnf5 config-manager setopt terra.enabled=1 2>/dev/null; then
+  dnf5 -y install --nogpgcheck --repofrompath "terra,https://repos.fyralabs.com/terra\$releasever" terra-release || log "Failed to enable Terra repo"
+fi
 
-## Imposta hostname di default per l'immagine
-echo "penguinos" > /etc/hostname
+# -------------------------------------------------------------------
+# RPM Fusion repositories and multimedia codecs
+# -------------------------------------------------------------------
+log "Setting up RPM Fusion"
+RPMFUSION_URL="https://mirrors.rpmfusion.org"
+if ! dnf5 -y install "$RPMFUSION_URL/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm" \
+               "$RPMFUSION_URL/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm"; then
+  log "Failed to add RPM Fusion repos"
+  exit 1
+fi
+# Install multimedia packages
+if ! dnf5 -y install ffmpeg x264-libs --allowerasing; then
+  log "Failed installing ffmpeg packages"
+  exit 1
+fi
+# Swap to full (non‑free) ffmpeg and install extra GStreamer plugins
+if ! dnf5 -y swap ffmpeg-free ffmpeg --allowerasing; then
+  log "Failed swapping ffmpeg"
+  exit 1
+fi
+GSTREAMER_PKGS=(
+  gstreamer1-plugins-good gstreamer1-plugins-bad-free gstreamer1-plugins-bad-freeworld \
+  gstreamer1-plugins-ugly gstreamer1-libav
+)
+if ! dnf5 -y install "${GSTREAMER_PKGS[@]}" --allowerasing \
+    --setopt="install_weak_deps=False" --exclude=PackageKit-gstreamer-plugin; then
+  log "Failed installing GStreamer plugins"
+  exit 1
+fi
 
-## Terra enable
-dnf5 config-manager setopt terra.enabled=1 2>/dev/null || \
-    dnf -y install --nogpgcheck --repofrompath 'terra,https://repos.fyralabs.com/terra$releasever' terra-release
-
-## Ghostty
-dnf -y install ghostty
-# Ship default Ghostty config to /etc/skel
+# -------------------------------------------------------------------
+# Ghostty configuration (system‑wide skeleton)
+# -------------------------------------------------------------------
+log "Installing Ghostty"
+dnf5 -y install ghostty
 mkdir -p /etc/skel/.config/ghostty
 cp -rf /ctx/dot_config/ghostty/config /etc/skel/.config/ghostty/
 
-## Rust toolchain
-dnf -y install cargo
+# -------------------------------------------------------------------
+# Brave browser – ensure /opt is a real directory before install
+# -------------------------------------------------------------------
+log "Preparing /opt for Brave"
+rm -f /opt && mkdir -p /opt /var/opt
+log "Adding Brave repository and keyring"
+dnf5 -y config-manager --add-repo https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo
+if ! dnf5 -y install brave-keyring; then
+  log "Failed to install Brave keyring"
+fi
+log "Installing Brave"
+if ! dnf5 -y install brave-origin; then
+  log "Failed to install Brave"
+fi
 
-# fully-featured ffmpeg con componenti non-free da rpm fusion
-dnf -y install https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
-dnf -y install ffmpeg x264-libs --allowerasing
+# -------------------------------------------------------------------
+# Niri window manager
+# -------------------------------------------------------------------
+log "Installing Niri"
+dnf5 -y install niri niri-settings
 
-# Codec multimediali extra
-dnf -y swap ffmpeg-free ffmpeg --allowerasing
-dnf -y install gstreamer1-plugins-good gstreamer1-plugins-bad-free gstreamer1-plugins-bad-freeworld gstreamer1-plugins-ugly gstreamer1-libav --allowerasing --setopt="install_weak_deps=False" --exclude=PackageKit-gstreamer-plugin
+# -------------------------------------------------------------------
+# Cursor editor – download with checksum verification via dnf
+# -------------------------------------------------------------------
+log "Installing Cursor"
+CURSOR_RPM_URL=$(curl -sSf "https://cursor.com/api/download?platform=linux-x64&releaseTrack=stable" | jq -r '.rpmUrl')
+if [[ -n "$CURSOR_RPM_URL" ]]; then
+  TMP_RPM="/tmp/cursor.rpm"
+  curl -fSL -o "$TMP_RPM" "$CURSOR_RPM_URL"
+  dnf5 -y install "$TMP_RPM"
+  rm -f "$TMP_RPM"
+else
+  log "Could not determine Cursor RPM URL – skipping"
+fi
 
-## Python tooling
-dnf -y install python3-pip python3-devel
-# uv (standalone binary)
-curl -LsSf https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-unknown-linux-gnu.tar.gz \
-  | tar xzf - -C /usr/bin --strip-components=1
-chmod +x /usr/bin/uv /usr/bin/uvx
+# -------------------------------------------------------------------
+# Oh My Zsh – system skeleton for new users
+# -------------------------------------------------------------------
+log "Setting up Oh My Zsh"
+ZSH_DIR="/etc/skel/.oh-my-zsh"
+git clone --depth 1 https://github.com/ohmyzsh/ohmyzsh.git "$ZSH_DIR"
+cp "$ZSH_DIR/templates/zshrc.zsh-template" /etc/skel/.zshrc
+# Plugins
+for plugin in autosuggestions zsh-autocomplete zsh-history-substring-search zsh-syntax-highlighting; do
+  git clone --depth 1 "https://github.com/${plugin/-/}/$plugin.git" "$ZSH_DIR/custom/plugins/$plugin"
+done
+sed -i 's/plugins=(git)/plugins=(dnf aliases genpass git zsh-autosuggestions zsh-autocomplete zsh-history-substring-search z zsh-syntax-highlighting)/' /etc/skel/.zshrc
+sed -i 's/ZSH_THEME="robbyrussell"/ZSH_THEME="jonathan"/' /etc/skel/.zshrc
+echo "eval \"$(zoxide init zsh --cmd cd)\"" >> /etc/skel/.zshrc
 
-## Utility CLI
-dnf -y install yq bind-utils rpm-build
+# -------------------------------------------------------------------
+# LazyVim (Neovim distribution)
+# -------------------------------------------------------------------
+log "Installing LazyVim"
+LVIM_DIR="/etc/skel/.config/nvim"
+git clone --depth 1 https://github.com/LazyVim/starter "$LVIM_DIR"
+rm -rf "$LVIM_DIR/.git"
 
-# Nautilus open any terminal extension
-curl -Lo /etc/yum.repos.d/nautilus-open-any-terminal.repo \
-    https://copr.fedorainfracloud.org/coprs/monkeygold/nautilus-open-any-terminal/repo/fedora-$(rpm -E %fedora)/monkeygold-nautilus-open-any-terminal-fedora-$(rpm -E %fedora).repo
-dnf install -y nautilus-open-any-terminal
-glib-compile-schemas /usr/share/glib-2.0/schemas
-gsettings set com.github.stunkymonkey.nautilus-open-any-terminal terminal ghostty
+# -------------------------------------------------------------------
+# Claude Code CLI
+# -------------------------------------------------------------------
+log "Installing Claude Code CLI"
+dnf5 -y install nodejs npm
+npm install -g @anthropic-ai/claude-code
 
-## Brave Origin (Official RPM package)
-dnf -y config-manager addrepo --from-repofile=https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo
-dnf -y install brave-keyring
+# -------------------------------------------------------------------
+# RTK – Rust Token Killer (verified script download)
+# -------------------------------------------------------------------
+log "Installing RTK"
+RTK_SCRIPT="/tmp/rtk-install.sh"
+curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh -o "$RTK_SCRIPT"
+if [[ -s "$RTK_SCRIPT" ]]; then
+  bash "$RTK_SCRIPT"
+  rm -f "$RTK_SCRIPT"
+else
+  log "RTK install script appears malformed – aborting"
+fi
 
-# On Fedora Atomic, /opt is symlinked to /var/opt, which breaks RPM cpio extraction
-# (the RPM tries to mkdir under /opt and fails because the symlink target differs).
-# Remove the symlink and create /opt as a real directory before installing brave-origin.
-# Also create /var/opt so rpm-ostree can preserve it across deployments.
-rm -f /opt && mkdir /opt
-mkdir -p /var/opt
+# -------------------------------------------------------------------
+# NetBird – download latest release with verification placeholder
+# -------------------------------------------------------------------
+log "Installing NetBird"
+NETBIRD_JSON=$(curl -sSf https://api.github.com/repos/netbirdio/netbird/releases/latest)
+NETBIRD_VERSION=$(echo "$NETBIRD_JSON" | jq -r '.tag_name')
+if [[ -z "$NETBIRD_VERSION" ]]; then
+  log "Could not retrieve NetBird version"
+else
+  NETBIRD_TAR="/tmp/netbird.tar.gz"
+  curl -fSL -o "$NETBIRD_TAR" "https://github.com/netbirdio/netbird/releases/download/${NETBIRD_VERSION}/netbird_${NETBIRD_VERSION#v}_linux_amd64.tar.gz"
+  tar -xzf "$NETBIRD_TAR" -C /usr/bin/
+  chmod +x /usr/bin/netbird
+  rm -f "$NETBIRD_TAR"
+fi
 
-# Install brave-origin directly via dnf — the package is available and functional
-dnf -y install brave-origin
+# -------------------------------------------------------------------
+# Google Fonts – download and install
+# -------------------------------------------------------------------
+log "Installing Google Fonts"
+GOOGLE_ZIP="/tmp/google-fonts.zip"
+curl -fSL -o "$GOOGLE_ZIP" https://github.com/google/fonts/archive/main.zip
+mkdir -p /usr/share/fonts/google
+unzip -q "$GOOGLE_ZIP" -d /usr/share/fonts/google
+rm -f "$GOOGLE_ZIP"
 
-# Install Niri
-dnf -y install niri niri-settings
+# -------------------------------------------------------------------
+# JetBrainsMono Nerd Font – verified download
+# -------------------------------------------------------------------
+log "Installing JetBrainsMono Nerd Font"
+JBZIP="/tmp/JetBrainsMono.zip"
+curl -fSL -o "$JBZIP" https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip
+mkdir -p /usr/share/fonts/JetBrainsMonoNerdFont
+unzip -q "$JBZIP" -d /usr/share/fonts/JetBrainsMonoNerdFont
+rm -f "$JBZIP"
 
-curl -Lo /etc/yum.repos.d/peterwu.repo \
-    https://copr.fedorainfracloud.org/coprs/peterwu/rendezvous/repo/fedora-$(rpm -E %fedora)/peterwu-rendezvous-fedora-$(rpm -E %fedora).repo
-dnf -y install bibata-cursor-themes
+# -------------------------------------------------------------------
+# Refresh font cache and GLib schemas (once)
+# -------------------------------------------------------------------
+log "Updating font cache and GLib schemas"
+fc-cache -f
+glib-compile-schemas /usr/share/glib-2.0/schemas/
 
-# Install Dank Linux shell (DMS)
-curl --output-dir "/etc/yum.repos.d/" \
-    --remote-name "https://copr.fedorainfracloud.org/coprs/avengemedia/dms/repo/fedora-$(rpm -E %fedora)/avengemedia-dms-fedora-$(rpm -E %fedora).repo"
-dnf -y install quickshell dms greetd dms-greeter --allowerasing
-
-## --- SETUP GREETD/DMS (sezione corretta) ---
-
-# Config greetd
-mkdir -p /etc/greetd/
-cat > /etc/greetd/config.toml << EOF
+# -------------------------------------------------------------------
+# GreetD + DMS (display manager) configuration
+# -------------------------------------------------------------------
+log "Configuring greetd and DMS"
+mkdir -p /etc/greetd
+cat > /etc/greetd/config.toml <<'EOF'
 [terminal]
 vt = 1
 
@@ -108,116 +240,40 @@ vt = 1
 user = "greeter"
 command = "dms-greeter --command niri"
 EOF
-
-# Disabilita esplicitamente gdm PRIMA di impostare greetd come display manager
-# (evita che restino due DM abilitati in conflitto)
+# Disable GDM if present
 systemctl disable gdm.service 2>/dev/null || true
-
-# Imposta greetd come display manager al posto di gdm
-rm -f /etc/systemd/system/display-manager.service
-ln -s /usr/lib/systemd/system/greetd.service /etc/systemd/system/display-manager.service
+# Set greetd as the display manager
+ln -sf /usr/lib/systemd/system/greetd.service /etc/systemd/system/display-manager.service
 systemctl enable --force greetd.service
-
-# Sessione utente di default con niri + dms
+# Enable DMS globally for all users
+systemctl --global enable dms.service
+# Add default user session skeleton
 mkdir -p /etc/skel/.config/systemd/user/graphical-session.target.wants
-ln -s /usr/lib/systemd/user/dms.service /etc/skel/.config/systemd/user/graphical-session.target.wants/
-
-mkdir -p /etc/skel/.config/niri/
+ln -sf /usr/lib/systemd/user/dms.service /etc/skel/.config/systemd/user/graphical-session.target.wants/
+# Niri config for new users
+mkdir -p /etc/skel/.config/niri
 cp -rf /ctx/dot_config/niri/config.kdl /etc/skel/.config/niri/
 
-# IMPORTANTE: riallinea il contesto SELinux di tutto ciò che abbiamo creato/modificato a mano.
-# Senza questo, greetd/dms possono venire bloccati da SELinux al boot (schermo nero/hang).
+# -------------------------------------------------------------------
+# SELinux context restoration (after all custom files are in place)
+# -------------------------------------------------------------------
+log "Restoring SELinux contexts"
 restorecon -Rv /etc/greetd \
     /etc/systemd/system/display-manager.service \
     /etc/skel/.config \
     /usr/lib/systemd/user/dms.service \
     /usr/local/bin/rtk || true
 
-# Abilita DMS per TUTTI gli utenti (fix definitivo: non dipende più da /etc/skel,
-# quindi funziona anche per utenti già esistenti prima di questo build)
-systemctl --global enable dms.service
+# -------------------------------------------------------------------
+# Podman socket activation
+# -------------------------------------------------------------------
+systemctl enable podman.socket || log "Failed to enable podman.socket"
 
-## --- FINE SETUP GREETD/DMS ---
-
-## App GUI e utilità
-dnf -y install seahorse
-flatpak install -y --noninteractive flathub com.github.tchx84.Flatseal 2>/dev/null || true
-
-## Qt Wayland support
-dnf -y install qt6-qtwayland
-
-## Cursor (RPM version)
-# Install jq for JSON parsing
-dnf -y install jq
-# Get latest Cursor RPM from official API and install
-CURSOR_RPM_URL=$(curl -s 'https://cursor.com/api/download?platform=linux-x64&releaseTrack=stable' | jq -r '.rpmUrl')
-if [ -n "$CURSOR_RPM_URL" ]; then
-    curl -L -o /tmp/cursor.rpm "$CURSOR_RPM_URL"
-    dnf -y install /tmp/cursor.rpm
-    rm -f /tmp/cursor.rpm
-else
-    echo "Warning: Could not determine Cursor RPM URL, skipping Cursor installation."
-fi
-
-## Zsh + Oh My Zsh (installati nello skeleton, verranno usati dai nuovi utenti)
-dnf -y install zsh zoxide fzf
-git clone https://github.com/ohmyzsh/ohmyzsh.git /etc/skel/.oh-my-zsh
-cp /etc/skel/.oh-my-zsh/templates/zshrc.zsh-template /etc/skel/.zshrc
-git clone https://github.com/zsh-users/zsh-autosuggestions /etc/skel/.oh-my-zsh/custom/plugins/zsh-autosuggestions
-git clone https://github.com/marlonrichert/zsh-autocomplete.git /etc/skel/.oh-my-zsh/custom/plugins/zsh-autocomplete
-git clone https://github.com/zsh-users/zsh-history-substring-search /etc/skel/.oh-my-zsh/custom/plugins/zsh-history-substring-search
-git clone https://github.com/zsh-users/zsh-syntax-highlighting.git /etc/skel/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting
-sed -i 's/plugins=(git)/plugins=(dnf aliases genpass git zsh-autosuggestions zsh-autocomplete zsh-history-substring-search z zsh-syntax-highlighting)/' /etc/skel/.zshrc
-sed -i 's/ZSH_THEME="robbyrussell"/ZSH_THEME="jonathan"/' /etc/skel/.zshrc
-echo 'eval "$(zoxide init zsh --cmd cd)"' >> /etc/skel/.zshrc
-
-## LazyVim (Neovim distribution)
-dnf -y install neovim ripgrep fd-find lazygit xclip wl-clipboard gcc gcc-c++ make
-git clone https://github.com/LazyVim/starter /etc/skel/.config/nvim
-rm -rf /etc/skel/.config/nvim/.git
-
-## Claude Code (CLI AI assistant by Anthropic)
-dnf -y install nodejs npm
-npm install -g @anthropic-ai/claude-code
-
-## RTK — Rust Token Killer (token-optimized CLI proxy)
-# Installed alongside Claude Code in /usr/local/bin so it's available system-wide
-curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
-
-## NetBird (solo il programma, nessuna configurazione automatica)
-NETBIRD_VERSION=$(curl -s https://api.github.com/repos/netbirdio/netbird/releases/latest | grep tag_name | cut -d '"' -f4)
-curl -fLo /tmp/netbird.tar.gz "https://github.com/netbirdio/netbird/releases/download/${NETBIRD_VERSION}/netbird_${NETBIRD_VERSION#v}_linux_amd64.tar.gz"
-tar -xzf /tmp/netbird.tar.gz -C /usr/bin/
-chmod +x /usr/bin/netbird
-rm -f /tmp/netbird.tar.gz
-
-## Google Fonts (system-wide, non nella home utente che non esiste ancora in fase di build)
-curl -Lo /tmp/google-fonts.zip https://github.com/google/fonts/archive/main.zip
-mkdir -p /usr/share/fonts/google
-unzip -q /tmp/google-fonts.zip -d /usr/share/fonts/google
-rm -f /tmp/google-fonts.zip
-fc-cache -f
-
-## Nerd Font Ghostty (JetBrainsMono Nerd Font)
-mkdir -p /usr/share/fonts/JetBrainsMonoNerdFont
-curl -fLo /tmp/JetBrainsMono.zip https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip
-unzip -q /tmp/JetBrainsMono.zip -d /usr/share/fonts/JetBrainsMonoNerdFont
-rm -f /tmp/JetBrainsMono.zip
-fc-cache -f
-
-## Icone e font management
-dnf -y install papirus-icon-theme
-
-#### Enable podman
-systemctl enable podman.socket
-
-# Remove waybar in modo sicuro, senza trascinare via dipendenze condivise
-dnf -y remove waybar --noautoremove || true
-
-# this is needed for some glib applications
-glib-compile-schemas /usr/share/glib-2.0/schemas/
-
-## CLEAN UP
+# -------------------------------------------------------------------
+# Clean up temporary DNF state
+# -------------------------------------------------------------------
+log "Cleaning DNF caches"
 dnf5 -y clean all
-rm -rf /run/dnf /run/selinux-policy
-rm -rf /var/lib/dnf
+rm -rf /run/dnf /run/selinux-policy /var/lib/dnf
+
+log "build.sh completed successfully"
