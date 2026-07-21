@@ -182,9 +182,10 @@ export GIT_ASKPASS=true
 git clone --depth 1 https://github.com/ohmyzsh/ohmyzsh.git "$ZSH_DIR"
 cp "$ZSH_DIR/templates/zshrc.zsh-template" /etc/skel/.zshrc
 # Plugins
-for plugin in autosuggestions zsh-autocomplete zsh-history-substring-search zsh-syntax-highlighting; do
-  git clone --depth 1 "https://github.com/${plugin/-/}/$plugin.git" "$ZSH_DIR/custom/plugins/$plugin"
-done
+git clone --depth 1 https://github.com/zsh-users/zsh-autosuggestions.git "$ZSH_DIR/custom/plugins/zsh-autosuggestions"
+git clone --depth 1 https://github.com/marlonrichert/zsh-autocomplete.git "$ZSH_DIR/custom/plugins/zsh-autocomplete"
+git clone --depth 1 https://github.com/zsh-users/zsh-history-substring-search.git "$ZSH_DIR/custom/plugins/zsh-history-substring-search"
+git clone --depth 1 https://github.com/zsh-users/zsh-syntax-highlighting.git "$ZSH_DIR/custom/plugins/zsh-syntax-highlighting"
 unset GIT_TERMINAL_PROMPT GIT_ASKPASS
 sed -i 's/plugins=(git)/plugins=(dnf aliases genpass git zsh-autosuggestions zsh-autocomplete zsh-history-substring-search z zsh-syntax-highlighting)/' /etc/skel/.zshrc
 sed -i 's/ZSH_THEME="robbyrussell"/ZSH_THEME="jonathan"/' /etc/skel/.zshrc
