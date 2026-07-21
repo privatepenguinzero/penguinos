@@ -85,7 +85,7 @@ mkdir -p /var/opt
 dnf -y install brave-origin
 
 # Install Niri
-dnf -y install niri
+dnf -y install niri niri-settings
 
 curl -Lo /etc/yum.repos.d/peterwu.repo \
     https://copr.fedorainfracloud.org/coprs/peterwu/rendezvous/repo/fedora-$(rpm -E %fedora)/peterwu-rendezvous-fedora-$(rpm -E %fedora).repo
