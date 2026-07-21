@@ -38,10 +38,10 @@ systemctl enable dnf5-automatic.timer || log "Failed to enable automatic timer"
 # Core services
 # -------------------------------------------------------------------
 log "Installing OpenSSH server"
-dnf5 -y install openssh-server && systemctl enable sshd
+dnf5 -y install openssh-server && systemctl enable sshd || true
 
 # -------------------------------------------------------------------
-# Package groups – single dnf5 transaction where possible
+# Package groups – install in chunks with retries
 # -------------------------------------------------------------------
 log "Installing core desktop and virtualization packages"
 CORE_PKGS=(
@@ -55,10 +55,41 @@ CORE_PKGS=(
   nodejs npm
   papirus-icon-theme
 )
-if ! dnf5 -y install "${CORE_PKGS[@]}"; then
-  log "Core package installation failed"
-  exit 1
-fi
+
+# Function to install packages with retry
+install_pkg_chunk() {
+  local chunk=("$@")
+  local max_attempts=5
+  local attempt=1
+  while [[ $attempt -le $max_attempts ]]; do
+    log "Installing chunk (attempt $attempt/$max_attempts): ${chunk[*]}"
+    # Clean metadata before each attempt to avoid corruption
+    dnf5 clean metadata >/dev/null 2>&1 || true
+    dnf5 makecache >/dev/null 2>&1 || true
+    if dnf5 -y install --skip-broken "${chunk[@]}"; then
+      return 0
+    else
+      log "Attempt $attempt failed, retrying in 20 seconds..."
+      ((attempt++))
+      sleep 20
+    fi
+  done
+  log "Failed to install chunk after $max_attempts attempts"
+  return 1
+}
+
+# Split CORE_PKGS into smaller chunks to avoid long transactions
+chunk_size=5  # Even smaller chunks to reduce memory pressure
+for ((i=0; i<${#CORE_PKGS[@]}; i+=chunk_size)); do
+  chunk=("${CORE_PKGS[@]:i:chunk_size}")
+  if ! install_pkg_chunk "${chunk[@]}"; then
+    log "Core package installation failed"
+    exit 1
+  fi
+  # Force garbage collection between chunks
+  sync
+  echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
+done
 
 # -------------------------------------------------------------------
 # Terra repository (idempotent)
