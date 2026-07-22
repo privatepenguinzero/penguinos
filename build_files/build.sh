@@ -145,15 +145,17 @@ log "Preparing /opt for Brave"
 rm -f /opt && mkdir -p /opt /var/opt
 log "Adding Brave repository and keyring"
 if ! curl -fsSL https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo -o /etc/yum.repos.d/brave-browser.repo; then
-  log "Failed to download Brave repo file; skipping Brave install"
-else
-  if ! dnf5 -y install brave-keyring; then
-    log "Failed to install Brave keyring"
-  fi
-  log "Installing Brave"
-  if ! dnf5 -y install brave-origin; then
-    log "Failed to install Brave"
-  fi
+  log "Failed to download Brave repo file"
+  exit 1
+fi
+if ! dnf5 -y install brave-keyring; then
+  log "Failed to install Brave keyring"
+  exit 1
+fi
+log "Installing Brave"
+if ! dnf5 -y install brave-origin; then
+  log "Failed to install Brave"
+  exit 1
 fi
 
 # -------------------------------------------------------------------
@@ -166,18 +168,21 @@ dnf5 -y install niri niri-settings
 # Cursor editor – download with checksum verification via dnf
 # -------------------------------------------------------------------
 log "Installing Cursor"
-CURSOR_RPM_URL=$(curl -sSf "https://cursor.com/api/download?platform=linux-x64&releaseTrack=stable" 2>/dev/null | jq -r '.rpmUrl' 2>/dev/null || true)
-if [[ -n "$CURSOR_RPM_URL" && "$CURSOR_RPM_URL" != "null" ]]; then
-  TMP_RPM="/tmp/cursor.rpm"
-  if curl -fSL -o "$TMP_RPM" "$CURSOR_RPM_URL"; then
-    dnf5 -y install "$TMP_RPM" || log "Failed to install Cursor RPM"
-    rm -f "$TMP_RPM"
-  else
-    log "Failed to download Cursor RPM – skipping"
-  fi
-else
-  log "Could not determine Cursor RPM URL – skipping"
+CURSOR_RPM_URL=$(curl -sSf "https://cursor.com/api/download?platform=linux-x64&releaseTrack=stable" | jq -r '.rpmUrl')
+if [[ -z "$CURSOR_RPM_URL" || "$CURSOR_RPM_URL" == "null" ]]; then
+  log "Could not determine Cursor RPM URL"
+  exit 1
 fi
+TMP_RPM="/tmp/cursor.rpm"
+if ! curl -fSL -o "$TMP_RPM" "$CURSOR_RPM_URL"; then
+  log "Failed to download Cursor RPM"
+  exit 1
+fi
+if ! dnf5 -y install "$TMP_RPM"; then
+  log "Failed to install Cursor RPM"
+  exit 1
+fi
+rm -f "$TMP_RPM"
 
 # -------------------------------------------------------------------
 # Oh My Zsh – system skeleton for new users
@@ -219,31 +224,35 @@ npm install -g @anthropic-ai/claude-code
 log "Installing RTK"
 RTK_SCRIPT="/tmp/rtk-install.sh"
 curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh -o "$RTK_SCRIPT"
-if [[ -s "$RTK_SCRIPT" ]]; then
-  bash "$RTK_SCRIPT"
-  rm -f "$RTK_SCRIPT"
-else
+if [[ ! -s "$RTK_SCRIPT" ]]; then
   log "RTK install script appears malformed – aborting"
+  exit 1
+fi
+RTK_INSTALL_DIR=/usr/local/bin bash "$RTK_SCRIPT"
+rm -f "$RTK_SCRIPT"
+if [[ ! -x /usr/local/bin/rtk ]]; then
+  log "RTK binary not found at /usr/local/bin/rtk after install – aborting"
+  exit 1
 fi
 
 # -------------------------------------------------------------------
 # NetBird – download latest release with verification placeholder
 # -------------------------------------------------------------------
 log "Installing NetBird"
-NETBIRD_JSON=$(curl -sSf https://api.github.com/repos/netbirdio/netbird/releases/latest 2>/dev/null || true)
-NETBIRD_VERSION=$(echo "$NETBIRD_JSON" | jq -r '.tag_name // empty' 2>/dev/null || true)
+NETBIRD_JSON=$(curl -sSf https://api.github.com/repos/netbirdio/netbird/releases/latest)
+NETBIRD_VERSION=$(echo "$NETBIRD_JSON" | jq -r '.tag_name // empty')
 if [[ -z "$NETBIRD_VERSION" ]]; then
-  log "Could not retrieve NetBird version – skipping"
-else
-  NETBIRD_TAR="/tmp/netbird.tar.gz"
-  if curl -fSL -o "$NETBIRD_TAR" "https://github.com/netbirdio/netbird/releases/download/${NETBIRD_VERSION}/netbird_${NETBIRD_VERSION#v}_linux_amd64.tar.gz"; then
-    tar -xzf "$NETBIRD_TAR" -C /usr/bin/
-    chmod +x /usr/bin/netbird
-    rm -f "$NETBIRD_TAR"
-  else
-    log "Failed to download NetBird – skipping"
-  fi
+  log "Could not retrieve NetBird version"
+  exit 1
 fi
+NETBIRD_TAR="/tmp/netbird.tar.gz"
+if ! curl -fSL -o "$NETBIRD_TAR" "https://github.com/netbirdio/netbird/releases/download/${NETBIRD_VERSION}/netbird_${NETBIRD_VERSION#v}_linux_amd64.tar.gz"; then
+  log "Failed to download NetBird"
+  exit 1
+fi
+tar -xzf "$NETBIRD_TAR" -C /usr/bin/ netbird
+chmod +x /usr/bin/netbird
+rm -f "$NETBIRD_TAR"
 
 # -------------------------------------------------------------------
 # Google Fonts – download and install
