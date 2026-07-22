@@ -290,14 +290,26 @@ glib-compile-schemas /usr/share/glib-2.0/schemas/
 # -------------------------------------------------------------------
 # DMS (DankMaterialShell) – only available via COPR, not Fedora/Terra
 # -------------------------------------------------------------------
+# Terra ships noctalia-qs, a fork of quickshell (from the noctalia-shell
+# project) that also declares `Provides: quickshell`. If it's present when
+# dms/dms-greeter are installed, dnf resolves their "quickshell" dependency
+# with that fork instead of the real quickshell package, and DMS silently
+# breaks (hover works, clicks don't) because it's running on the wrong
+# quickshell build. Remove it and pin the real package explicitly so this
+# can't happen again.
+if rpm -q noctalia-qs &>/dev/null; then
+  log "Removing noctalia-qs (conflicts with DMS's quickshell dependency)"
+  dnf5 -y remove noctalia-qs
+fi
+
 log "Enabling avengemedia/dms COPR repository"
 if ! dnf5 -y copr enable avengemedia/dms; then
   log "Failed to enable avengemedia/dms COPR repository"
   exit 1
 fi
-log "Installing dms and dms-greeter"
-if ! dnf5 -y install dms dms-greeter; then
-  log "Failed to install dms/dms-greeter"
+log "Installing quickshell, dms and dms-greeter"
+if ! dnf5 -y install quickshell dms dms-greeter; then
+  log "Failed to install quickshell/dms/dms-greeter"
   exit 1
 fi
 
