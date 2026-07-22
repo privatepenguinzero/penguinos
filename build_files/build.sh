@@ -144,13 +144,16 @@ cp -rf /ctx/dot_config/ghostty/config /etc/skel/.config/ghostty/
 log "Preparing /opt for Brave"
 rm -f /opt && mkdir -p /opt /var/opt
 log "Adding Brave repository and keyring"
-curl -fsSL https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo -o /etc/yum.repos.d/brave-browser.repo
-if ! dnf5 -y install brave-keyring; then
-  log "Failed to install Brave keyring"
-fi
-log "Installing Brave"
-if ! dnf5 -y install brave-origin; then
-  log "Failed to install Brave"
+if ! curl -fsSL https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo -o /etc/yum.repos.d/brave-browser.repo; then
+  log "Failed to download Brave repo file; skipping Brave install"
+else
+  if ! dnf5 -y install brave-keyring; then
+    log "Failed to install Brave keyring"
+  fi
+  log "Installing Brave"
+  if ! dnf5 -y install brave-origin; then
+    log "Failed to install Brave"
+  fi
 fi
 
 # -------------------------------------------------------------------
@@ -163,12 +166,15 @@ dnf5 -y install niri niri-settings
 # Cursor editor – download with checksum verification via dnf
 # -------------------------------------------------------------------
 log "Installing Cursor"
-CURSOR_RPM_URL=$(curl -sSf "https://cursor.com/api/download?platform=linux-x64&releaseTrack=stable" | jq -r '.rpmUrl')
-if [[ -n "$CURSOR_RPM_URL" ]]; then
+CURSOR_RPM_URL=$(curl -sSf "https://cursor.com/api/download?platform=linux-x64&releaseTrack=stable" 2>/dev/null | jq -r '.rpmUrl' 2>/dev/null || true)
+if [[ -n "$CURSOR_RPM_URL" && "$CURSOR_RPM_URL" != "null" ]]; then
   TMP_RPM="/tmp/cursor.rpm"
-  curl -fSL -o "$TMP_RPM" "$CURSOR_RPM_URL"
-  dnf5 -y install "$TMP_RPM"
-  rm -f "$TMP_RPM"
+  if curl -fSL -o "$TMP_RPM" "$CURSOR_RPM_URL"; then
+    dnf5 -y install "$TMP_RPM" || log "Failed to install Cursor RPM"
+    rm -f "$TMP_RPM"
+  else
+    log "Failed to download Cursor RPM – skipping"
+  fi
 else
   log "Could not determine Cursor RPM URL – skipping"
 fi
@@ -224,16 +230,19 @@ fi
 # NetBird – download latest release with verification placeholder
 # -------------------------------------------------------------------
 log "Installing NetBird"
-NETBIRD_JSON=$(curl -sSf https://api.github.com/repos/netbirdio/netbird/releases/latest)
-NETBIRD_VERSION=$(echo "$NETBIRD_JSON" | jq -r '.tag_name')
+NETBIRD_JSON=$(curl -sSf https://api.github.com/repos/netbirdio/netbird/releases/latest 2>/dev/null || true)
+NETBIRD_VERSION=$(echo "$NETBIRD_JSON" | jq -r '.tag_name // empty' 2>/dev/null || true)
 if [[ -z "$NETBIRD_VERSION" ]]; then
-  log "Could not retrieve NetBird version"
+  log "Could not retrieve NetBird version – skipping"
 else
   NETBIRD_TAR="/tmp/netbird.tar.gz"
-  curl -fSL -o "$NETBIRD_TAR" "https://github.com/netbirdio/netbird/releases/download/${NETBIRD_VERSION}/netbird_${NETBIRD_VERSION#v}_linux_amd64.tar.gz"
-  tar -xzf "$NETBIRD_TAR" -C /usr/bin/
-  chmod +x /usr/bin/netbird
-  rm -f "$NETBIRD_TAR"
+  if curl -fSL -o "$NETBIRD_TAR" "https://github.com/netbirdio/netbird/releases/download/${NETBIRD_VERSION}/netbird_${NETBIRD_VERSION#v}_linux_amd64.tar.gz"; then
+    tar -xzf "$NETBIRD_TAR" -C /usr/bin/
+    chmod +x /usr/bin/netbird
+    rm -f "$NETBIRD_TAR"
+  else
+    log "Failed to download NetBird – skipping"
+  fi
 fi
 
 # -------------------------------------------------------------------
@@ -241,20 +250,26 @@ fi
 # -------------------------------------------------------------------
 log "Installing Google Fonts"
 GOOGLE_ZIP="/tmp/google-fonts.zip"
-curl -fSL -o "$GOOGLE_ZIP" https://github.com/google/fonts/archive/main.zip
-mkdir -p /usr/share/fonts/google
-unzip -q "$GOOGLE_ZIP" -d /usr/share/fonts/google
-rm -f "$GOOGLE_ZIP"
+if curl -fSL -o "$GOOGLE_ZIP" https://github.com/google/fonts/archive/main.zip; then
+  mkdir -p /usr/share/fonts/google
+  unzip -q "$GOOGLE_ZIP" -d /usr/share/fonts/google
+  rm -f "$GOOGLE_ZIP"
+else
+  log "Failed to download Google Fonts – skipping"
+fi
 
 # -------------------------------------------------------------------
 # JetBrainsMono Nerd Font – verified download
 # -------------------------------------------------------------------
 log "Installing JetBrainsMono Nerd Font"
 JBZIP="/tmp/JetBrainsMono.zip"
-curl -fSL -o "$JBZIP" https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip
-mkdir -p /usr/share/fonts/JetBrainsMonoNerdFont
-unzip -q "$JBZIP" -d /usr/share/fonts/JetBrainsMonoNerdFont
-rm -f "$JBZIP"
+if curl -fSL -o "$JBZIP" https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip; then
+  mkdir -p /usr/share/fonts/JetBrainsMonoNerdFont
+  unzip -q "$JBZIP" -d /usr/share/fonts/JetBrainsMonoNerdFont
+  rm -f "$JBZIP"
+else
+  log "Failed to download JetBrainsMono Nerd Font – skipping"
+fi
 
 # -------------------------------------------------------------------
 # Refresh font cache and GLib schemas (once)
