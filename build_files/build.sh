@@ -54,7 +54,7 @@ CORE_PKGS=(
   neovim ripgrep fd-find lazygit xclip wl-clipboard gcc gcc-c++ make
   nodejs npm
   papirus-icon-theme
-  greetd dms
+  greetd
 )
 
 # Function to install packages with retry
@@ -286,6 +286,20 @@ fi
 log "Updating font cache and GLib schemas"
 fc-cache -f
 glib-compile-schemas /usr/share/glib-2.0/schemas/
+
+# -------------------------------------------------------------------
+# DMS (DankMaterialShell) – only available via COPR, not Fedora/Terra
+# -------------------------------------------------------------------
+log "Enabling avengemedia/dms COPR repository"
+if ! dnf5 -y copr enable avengemedia/dms; then
+  log "Failed to enable avengemedia/dms COPR repository"
+  exit 1
+fi
+log "Installing dms and dms-greeter"
+if ! dnf5 -y install dms dms-greeter; then
+  log "Failed to install dms/dms-greeter"
+  exit 1
+fi
 
 # -------------------------------------------------------------------
 # GreetD + DMS (display manager) configuration
