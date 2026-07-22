@@ -114,8 +114,10 @@ layout {
     }
 }
 
-// This line starts waybar, a commonly used bar for Wayland compositors.
-spawn-at-startup "noctalia-shell"
+// DMS (DankMaterialShell) is the shell for this system, started via the
+// dms.service systemd user unit (see build.sh) — do not also spawn another
+// shell (waybar/noctalia-shell/etc.) here, it will fight DMS for the bar
+// layer-shell surface and steal its input.
 
 // To run a shell command (with variables, pipes, etc.), use spawn-sh-at-startup:
 // spawn-sh-at-startup "qs -c ~/source/qs/MyAwesomeShell"

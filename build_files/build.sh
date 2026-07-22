@@ -328,6 +328,15 @@ ln -sf /usr/lib/systemd/user/dms.service /etc/skel/.config/systemd/user/graphica
 mkdir -p /etc/skel/.config/niri
 cp -rf /ctx/dot_config/niri/config.kdl /etc/skel/.config/niri/
 
+# DMS's Go backend needs raw access to /dev/input/* (evdev) to detect clicks
+# on its own bar/panels; without it, hover works but clicks silently no-op.
+# Grant it via udev uaccess instead of requiring manual `usermod -aG input`,
+# since users aren't created at image-build time.
+mkdir -p /usr/lib/udev/rules.d
+cat > /usr/lib/udev/rules.d/91-dms-input-uaccess.rules <<'EOF'
+SUBSYSTEM=="input", TAG+="uaccess"
+EOF
+
 # -------------------------------------------------------------------
 # SELinux context restoration (after all custom files are in place)
 # -------------------------------------------------------------------
@@ -336,6 +345,7 @@ restorecon -Rv /etc/greetd \
     /etc/systemd/system/display-manager.service \
     /etc/skel/.config \
     /usr/lib/systemd/user/dms.service \
+    /usr/lib/udev/rules.d/91-dms-input-uaccess.rules \
     /usr/local/bin/rtk || true
 
 # -------------------------------------------------------------------
