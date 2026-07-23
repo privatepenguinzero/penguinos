@@ -303,8 +303,13 @@ else
 fi
 SUPERFILE_EXTRACT_DIR="/tmp/superfile-extract"
 mkdir -p "$SUPERFILE_EXTRACT_DIR"
-tar -xzf "$SUPERFILE_TAR" -C "$SUPERFILE_EXTRACT_DIR" "dist/superfile-linux-${SUPERFILE_VERSION}-amd64/spf"
-install -m 0755 "$SUPERFILE_EXTRACT_DIR/dist/superfile-linux-${SUPERFILE_VERSION}-amd64/spf" /usr/bin/spf
+tar -xzf "$SUPERFILE_TAR" -C "$SUPERFILE_EXTRACT_DIR"
+SUPERFILE_BIN=$(find "$SUPERFILE_EXTRACT_DIR" -type f -name spf -print -quit)
+if [[ -z "$SUPERFILE_BIN" ]]; then
+  log "Could not find spf binary in Superfile archive"
+  exit 1
+fi
+install -m 0755 "$SUPERFILE_BIN" /usr/bin/spf
 rm -rf "$SUPERFILE_TAR" "$SUPERFILE_CHECKSUMS" "$SUPERFILE_EXTRACT_DIR"
 
 # -------------------------------------------------------------------
