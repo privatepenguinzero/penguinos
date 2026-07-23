@@ -51,7 +51,7 @@ CORE_PKGS=(
   cargo
   yq bind-utils rpm-build
   zsh zoxide fzf
-  neovim ripgrep fd-find lazygit xclip wl-clipboard gcc gcc-c++ make
+  neovim ripgrep fd-find lazygit git-delta xclip wl-clipboard gcc gcc-c++ make
   nodejs npm
   papirus-icon-theme
   greetd
@@ -572,6 +572,23 @@ log "Installing Catppuccin theme for lazygit"
 mkdir -p /etc/skel/.config/lazygit
 if ! curl -fsSL -o /etc/skel/.config/lazygit/config.yml https://raw.githubusercontent.com/catppuccin/lazygit/main/themes/mocha/peach.yml; then
   log "Failed to download lazygit Catppuccin theme - skipping"
+fi
+
+log "Installing Catppuccin theme for delta and wiring it as git's pager"
+mkdir -p /etc/skel/.config/git
+if curl -fsSL -o /etc/skel/.config/git/catppuccin.gitconfig https://raw.githubusercontent.com/catppuccin/delta/main/catppuccin.gitconfig; then
+  cat > /etc/skel/.gitconfig <<'EOF'
+[include]
+	path = ~/.config/git/catppuccin.gitconfig
+[core]
+	pager = delta
+[interactive]
+	diffFilter = delta --color-only
+[delta]
+	features = catppuccin-mocha
+EOF
+else
+  log "Failed to download delta Catppuccin theme - skipping"
 fi
 
 log "Installing Catppuccin theme for fzf"
