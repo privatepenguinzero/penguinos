@@ -257,11 +257,34 @@ if [[ ! -x /usr/local/bin/rtk ]]; then
   exit 1
 fi
 
+# Fetch a GitHub API URL with retries, since api.github.com's unauthenticated
+# rate limit (60 req/hr) is shared across all traffic from Actions runner NAT
+# IPs and can transiently 403 even on a fresh call.
+github_api_get() {
+  local url="$1"
+  local max_attempts=5
+  local attempt=1
+  local response
+  while [[ $attempt -le $max_attempts ]]; do
+    if response=$(curl -sSf "$url"); then
+      echo "$response"
+      return 0
+    fi
+    log "GitHub API request failed (attempt $attempt/$max_attempts): $url"
+    ((attempt++))
+    sleep 15
+  done
+  return 1
+}
+
 # -------------------------------------------------------------------
 # NetBird – download latest release with verification placeholder
 # -------------------------------------------------------------------
 log "Installing NetBird"
-NETBIRD_JSON=$(curl -sSf https://api.github.com/repos/netbirdio/netbird/releases/latest)
+NETBIRD_JSON=$(github_api_get https://api.github.com/repos/netbirdio/netbird/releases/latest) || {
+  log "Could not reach GitHub API for NetBird release info"
+  exit 1
+}
 NETBIRD_VERSION=$(echo "$NETBIRD_JSON" | jq -r '.tag_name // empty')
 if [[ -z "$NETBIRD_VERSION" ]]; then
   log "Could not retrieve NetBird version"
@@ -280,7 +303,10 @@ rm -f "$NETBIRD_TAR"
 # Superfile – terminal file manager (verified release download)
 # -------------------------------------------------------------------
 log "Installing Superfile"
-SUPERFILE_JSON=$(curl -sSf https://api.github.com/repos/yorukot/superfile/releases/latest)
+SUPERFILE_JSON=$(github_api_get https://api.github.com/repos/yorukot/superfile/releases/latest) || {
+  log "Could not reach GitHub API for Superfile release info"
+  exit 1
+}
 SUPERFILE_VERSION=$(echo "$SUPERFILE_JSON" | jq -r '.tag_name // empty')
 if [[ -z "$SUPERFILE_VERSION" ]]; then
   log "Could not retrieve Superfile version"
