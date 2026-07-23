@@ -3,4 +3,5 @@ _build_*
 output
 _build-*/**
 CLAUDE.md
+.claude/
 build.log
