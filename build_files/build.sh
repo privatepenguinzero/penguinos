@@ -277,6 +277,37 @@ chmod +x /usr/bin/netbird
 rm -f "$NETBIRD_TAR"
 
 # -------------------------------------------------------------------
+# Superfile – terminal file manager (verified release download)
+# -------------------------------------------------------------------
+log "Installing Superfile"
+SUPERFILE_JSON=$(curl -sSf https://api.github.com/repos/yorukot/superfile/releases/latest)
+SUPERFILE_VERSION=$(echo "$SUPERFILE_JSON" | jq -r '.tag_name // empty')
+if [[ -z "$SUPERFILE_VERSION" ]]; then
+  log "Could not retrieve Superfile version"
+  exit 1
+fi
+SUPERFILE_ASSET="superfile-linux-${SUPERFILE_VERSION}-amd64.tar.gz"
+SUPERFILE_TAR="/tmp/${SUPERFILE_ASSET}"
+if ! curl -fSL -o "$SUPERFILE_TAR" "https://github.com/yorukot/superfile/releases/download/${SUPERFILE_VERSION}/${SUPERFILE_ASSET}"; then
+  log "Failed to download Superfile"
+  exit 1
+fi
+SUPERFILE_CHECKSUMS="/tmp/superfile-checksums.txt"
+if curl -fsSL -o "$SUPERFILE_CHECKSUMS" "https://github.com/yorukot/superfile/releases/download/${SUPERFILE_VERSION}/superfile-${SUPERFILE_VERSION}-checksums.txt"; then
+  if ! (cd /tmp && grep "$SUPERFILE_ASSET" "$SUPERFILE_CHECKSUMS" | sha256sum -c -); then
+    log "Superfile checksum verification failed"
+    exit 1
+  fi
+else
+  log "Failed to download Superfile checksums - continuing without verification"
+fi
+SUPERFILE_EXTRACT_DIR="/tmp/superfile-extract"
+mkdir -p "$SUPERFILE_EXTRACT_DIR"
+tar -xzf "$SUPERFILE_TAR" -C "$SUPERFILE_EXTRACT_DIR" "dist/superfile-linux-${SUPERFILE_VERSION}-amd64/spf"
+install -m 0755 "$SUPERFILE_EXTRACT_DIR/dist/superfile-linux-${SUPERFILE_VERSION}-amd64/spf" /usr/bin/spf
+rm -rf "$SUPERFILE_TAR" "$SUPERFILE_CHECKSUMS" "$SUPERFILE_EXTRACT_DIR"
+
+# -------------------------------------------------------------------
 # Google Fonts – download and install
 # -------------------------------------------------------------------
 log "Installing Google Fonts"
@@ -531,6 +562,16 @@ skin=catppuccin
 EOF
 else
   log "Failed to clone catppuccin/mc - skipping"
+fi
+
+log "Installing Catppuccin theme for superfile"
+mkdir -p /etc/skel/.config/superfile/theme
+if curl -fsSL -o /etc/skel/.config/superfile/theme/catppuccin-mocha-peach.toml https://raw.githubusercontent.com/catppuccin/superfile/main/themes/mocha/catppuccin-mocha-peach.toml; then
+  cat > /etc/skel/.config/superfile/config.toml <<'EOF'
+theme = "catppuccin-mocha-peach"
+EOF
+else
+  log "Failed to download superfile Catppuccin theme - skipping"
 fi
 
 log "Installing Catppuccin theme for zsh-syntax-highlighting"
