@@ -172,7 +172,7 @@ window-rule {
     // This app-id regular expression will work for both:
     // - host Firefox (app-id is "firefox")
     // - Flatpak Firefox (app-id is "org.mozilla.firefox")
-    match app-id=r#"firefox$"# title="^Picture-in-Picture$"
+    match app-id=r#"brave-origin$"# title="^Picture-in-Picture$"
     open-floating true
 }
 
@@ -186,7 +186,7 @@ workspace "a" {
 }
 
 window-rule {
-    match title="Firefox"
+    match title="Brave Origin"
     open-on-workspace "c"
     open-maximized true
 }
@@ -467,3 +467,18 @@ binds {
     // moving the mouse or pressing any other key.
     Mod+Shift+P { power-off-monitors; }
 }
+
+include "basicsettings.kdl" // Added by niri-settings
+
+include "keybinds.kdl" // Added by niri-settings
+
+// DMS-managed fragments (matugen-generated). Colors follow the DMS theme
+// (Catppuccin Mocha/Peach by default) — see /etc/skel/.config/DankMaterialShell.
+include "dms/colors.kdl"
+include "dms/layout.kdl"
+include "dms/alttab.kdl"
+include "dms/wpblur.kdl"
+include "dms/binds.kdl"
+include "dms/cursor.kdl"
+include "dms/outputs.kdl"
+include "dms/windowrules.kdl"

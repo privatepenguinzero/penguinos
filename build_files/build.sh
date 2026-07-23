@@ -161,8 +161,11 @@ fi
 # -------------------------------------------------------------------
 # Niri window manager
 # -------------------------------------------------------------------
+# niri Recommends alacritty as a weak dependency; we ship Ghostty as the
+# main terminal, so exclude it to avoid installing a second, unconfigured
+# terminal emulator.
 log "Installing Niri"
-dnf5 -y install niri niri-settings
+dnf5 -y install niri niri-settings --exclude=alacritty
 
 # -------------------------------------------------------------------
 # Cursor editor – download with checksum verification via dnf
@@ -210,6 +213,25 @@ log "Installing LazyVim"
 LVIM_DIR="/etc/skel/.config/nvim"
 git clone --depth 1 https://github.com/LazyVim/starter "$LVIM_DIR"
 rm -rf "$LVIM_DIR/.git"
+mkdir -p "$LVIM_DIR/lua/plugins"
+cat > "$LVIM_DIR/lua/plugins/colorscheme.lua" <<'EOF'
+return {
+  {
+    "catppuccin/nvim",
+    name = "catppuccin",
+    priority = 1000,
+    opts = {
+      flavour = "mocha",
+    },
+  },
+  {
+    "LazyVim/LazyVim",
+    opts = {
+      colorscheme = "catppuccin",
+    },
+  },
+}
+EOF
 
 # -------------------------------------------------------------------
 # Claude Code CLI
@@ -281,6 +303,38 @@ else
 fi
 
 # -------------------------------------------------------------------
+# Fontconfig defaults fix
+# -------------------------------------------------------------------
+# Fedora's google-noto-sans-arabic-vf-fonts package ships
+# /etc/fonts/conf.d/56-google-noto-sans-arabic-vf.conf, which unconditionally
+# prepends "Noto Sans Arabic" to both the `sans-serif` and `monospace`
+# generic family aliases (missing the lang="ar" test other Noto conf.d
+# files use to scope themselves). That makes every app relying on generic
+# "monospace"/"sans-serif" (Alacritty with no font set, Cursor's UI, etc.)
+# render with Noto Sans Arabic instead of a real Latin font. conf.d files
+# are read in filename order and each <edit mode="prepend"> pushes to the
+# front, so a higher-sorting file here wins over the buggy one.
+log "Pinning sane fontconfig defaults for monospace/sans-serif"
+cat > /etc/fonts/conf.d/90-penguinos-font-defaults.conf <<'EOF'
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd">
+<fontconfig>
+  <match target="pattern">
+    <test name="family"><string>monospace</string></test>
+    <edit name="family" mode="prepend" binding="strong">
+      <string>JetBrainsMono Nerd Font</string>
+    </edit>
+  </match>
+  <match target="pattern">
+    <test name="family"><string>sans-serif</string></test>
+    <edit name="family" mode="prepend" binding="strong">
+      <string>Noto Sans</string>
+    </edit>
+  </match>
+</fontconfig>
+EOF
+
+# -------------------------------------------------------------------
 # Refresh font cache and GLib schemas (once)
 # -------------------------------------------------------------------
 log "Updating font cache and GLib schemas"
@@ -338,7 +392,155 @@ mkdir -p /etc/skel/.config/systemd/user/graphical-session.target.wants
 ln -sf /usr/lib/systemd/user/dms.service /etc/skel/.config/systemd/user/graphical-session.target.wants/
 # Niri config for new users
 mkdir -p /etc/skel/.config/niri
-cp -rf /ctx/dot_config/niri/config.kdl /etc/skel/.config/niri/
+cp -rf /ctx/dot_config/niri/config.kdl /ctx/dot_config/niri/basicsettings.kdl /ctx/dot_config/niri/keybinds.kdl /etc/skel/.config/niri/
+mkdir -p /etc/skel/.config/niri/dms
+cp -rf /ctx/dot_config/niri/dms/. /etc/skel/.config/niri/dms/
+
+# DankMaterialShell config for new users
+mkdir -p /etc/skel/.config/DankMaterialShell
+cp -rf /ctx/dot_config/DankMaterialShell/settings.json /etc/skel/.config/DankMaterialShell/
+
+# -------------------------------------------------------------------
+# Catppuccin (Mocha/Peach) theming for the rest of the desktop/CLI
+# -------------------------------------------------------------------
+# Ghostty and DMS/niri already default to Catppuccin Mocha (see above and
+# dot_config/ghostty/config). This section extends the same flavor+accent
+# to the other tools installed by this script, using the official
+# catppuccin.github.io per-app themes. The upstream `catppuccin/gtk` and
+# Kvantum ports are skipped: gtk was archived upstream (now requires a
+# separate Python build tool, not a drop-in theme) and Kvantum has no real
+# footprint here (this image has no Kvantum-themed Qt apps installed).
+log "Installing Catppuccin cursors"
+CURSORS_ZIP="/tmp/catppuccin-cursors.zip"
+if curl -fSL -o "$CURSORS_ZIP" https://github.com/catppuccin/cursors/releases/latest/download/catppuccin-mocha-peach-cursors.zip; then
+  unzip -q -o "$CURSORS_ZIP" -d /usr/share/icons
+  rm -f "$CURSORS_ZIP"
+else
+  log "Failed to download Catppuccin cursors - skipping"
+fi
+
+log "Recoloring Papirus folders to Catppuccin Mocha/Peach"
+PAPIRUS_FOLDERS_SRC="/tmp/papirus-folders-src"
+if git clone --depth 1 https://github.com/catppuccin/papirus-folders.git "$PAPIRUS_FOLDERS_SRC"; then
+  cp -rf "$PAPIRUS_FOLDERS_SRC"/src/* /usr/share/icons/Papirus/
+  rm -rf "$PAPIRUS_FOLDERS_SRC"
+  if curl -fsSL -o /usr/local/bin/papirus-folders https://raw.githubusercontent.com/PapirusDevelopmentTeam/papirus-folders/master/papirus-folders; then
+    chmod +x /usr/local/bin/papirus-folders
+    /usr/local/bin/papirus-folders -C cat-mocha-peach --theme Papirus-Dark
+  else
+    log "Failed to download papirus-folders script - skipping recolor"
+  fi
+else
+  log "Failed to clone catppuccin/papirus-folders - skipping"
+fi
+
+# Default icon/cursor theme for new users. (No GTK widget theme override -
+# see note above; Papirus-Dark + Catppuccin cursors cover icons/pointer.)
+mkdir -p /etc/skel/.config/gtk-3.0 /etc/skel/.config/gtk-4.0
+for gtkdir in /etc/skel/.config/gtk-3.0 /etc/skel/.config/gtk-4.0; do
+  cat > "$gtkdir/settings.ini" <<'EOF'
+[Settings]
+gtk-icon-theme-name=Papirus-Dark
+gtk-cursor-theme-name=catppuccin-mocha-peach-cursors
+gtk-cursor-theme-size=24
+gtk-application-prefer-dark-theme=true
+EOF
+done
+
+log "Setting Catppuccin Mocha as the default GNOME Terminal profile"
+MOCHA_UUID="95894cfd-82f7-430d-af6e-84d168bc34f5"
+mkdir -p /etc/dconf/db/local.d
+cat > /etc/dconf/db/local.d/01-catppuccin-gnome-terminal <<EOF
+[org/gnome/terminal/legacy/profiles:/:$MOCHA_UUID]
+visible-name='Catppuccin Mocha'
+background-color='#1e1e2e'
+foreground-color='#cdd6f4'
+highlight-colors-set=true
+highlight-background-color='#f5e0dc'
+highlight-foreground-color='#585b70'
+cursor-colors-set=true
+cursor-background-color='#f5e0dc'
+cursor-foreground-color='#1e1e2e'
+use-theme-colors=false
+bold-is-bright=true
+palette=['#45475a', '#f38ba8', '#a6e3a1', '#f9e2af', '#89b4fa', '#f5c2e7', '#94e2d5', '#a6adc8', '#585b70', '#f37799', '#89d88b', '#ebd391', '#74a8fc', '#f2aede', '#6bd7ca', '#bac2de']
+
+[org/gnome/terminal/legacy/profiles:]
+default='$MOCHA_UUID'
+list=['$MOCHA_UUID']
+EOF
+dconf update
+
+log "Installing Catppuccin theme for btop"
+mkdir -p /etc/skel/.config/btop/themes
+if curl -fsSL -o /etc/skel/.config/btop/themes/catppuccin_mocha.theme https://raw.githubusercontent.com/catppuccin/btop/main/themes/catppuccin_mocha.theme; then
+  cat > /etc/skel/.config/btop/btop.conf <<'EOF'
+color_theme = "catppuccin_mocha"
+theme_background = False
+EOF
+else
+  log "Failed to download btop Catppuccin theme - skipping"
+fi
+
+log "Installing Catppuccin theme for bat"
+mkdir -p /etc/skel/.config/bat/themes
+if curl -fsSL -o "/etc/skel/.config/bat/themes/Catppuccin Mocha.tmTheme" "https://github.com/catppuccin/bat/raw/main/themes/Catppuccin%20Mocha.tmTheme"; then
+  echo '--theme="Catppuccin Mocha"' > /etc/skel/.config/bat/config
+  # Custom bat themes need a per-user binary cache; build it lazily on first
+  # shell start instead of trying to precompute it for a user that doesn't
+  # exist yet at image-build time.
+  echo 'bat --list-themes 2>/dev/null | grep -q "Catppuccin Mocha" || bat cache --build &>/dev/null' >> /etc/skel/.zshrc
+else
+  log "Failed to download bat Catppuccin theme - skipping"
+fi
+
+log "Installing Catppuccin theme for tmux"
+mkdir -p /etc/skel/.config/tmux/plugins/catppuccin
+if git clone --depth 1 https://github.com/catppuccin/tmux.git /etc/skel/.config/tmux/plugins/catppuccin/tmux; then
+  rm -rf /etc/skel/.config/tmux/plugins/catppuccin/tmux/.git
+  cat > /etc/skel/.tmux.conf <<'EOF'
+set -g @catppuccin_flavor "mocha"
+run ~/.config/tmux/plugins/catppuccin/tmux/catppuccin.tmux
+EOF
+else
+  log "Failed to clone catppuccin/tmux - skipping"
+fi
+
+log "Installing Catppuccin theme for lazygit"
+mkdir -p /etc/skel/.config/lazygit
+if ! curl -fsSL -o /etc/skel/.config/lazygit/config.yml https://raw.githubusercontent.com/catppuccin/lazygit/main/themes/mocha/peach.yml; then
+  log "Failed to download lazygit Catppuccin theme - skipping"
+fi
+
+log "Installing Catppuccin theme for fzf"
+mkdir -p /etc/skel/.config/fzf
+if curl -fsSL -o /etc/skel/.config/fzf/catppuccin-mocha.sh https://raw.githubusercontent.com/catppuccin/fzf/main/themes/catppuccin-fzf-mocha.sh; then
+  echo 'source ~/.config/fzf/catppuccin-mocha.sh' >> /etc/skel/.zshrc
+else
+  log "Failed to download fzf Catppuccin theme - skipping"
+fi
+
+log "Installing Catppuccin theme for mc (Midnight Commander)"
+mkdir -p /etc/skel/.local/share/mc/skins /etc/skel/.config/mc
+if git clone --depth 1 https://github.com/catppuccin/mc.git /etc/skel/.local/share/mc/skins/mc; then
+  rm -rf /etc/skel/.local/share/mc/skins/mc/.git
+  ln -sf ./mc/catppuccin.ini /etc/skel/.local/share/mc/skins/catppuccin.ini
+  cat > /etc/skel/.config/mc/ini <<'EOF'
+[Midnight-Commander]
+skin=catppuccin
+EOF
+else
+  log "Failed to clone catppuccin/mc - skipping"
+fi
+
+log "Installing Catppuccin theme for zsh-syntax-highlighting"
+mkdir -p /etc/skel/.zsh
+if curl -fsSL -o /etc/skel/.zsh/catppuccin_mocha-zsh-syntax-highlighting.zsh https://raw.githubusercontent.com/catppuccin/zsh-syntax-highlighting/main/themes/catppuccin_mocha-zsh-syntax-highlighting.zsh; then
+  # Must be sourced before the zsh-syntax-highlighting plugin loads.
+  sed -i '\#source \$ZSH/oh-my-zsh.sh#i source ~/.zsh/catppuccin_mocha-zsh-syntax-highlighting.zsh' /etc/skel/.zshrc
+else
+  log "Failed to download zsh-syntax-highlighting Catppuccin theme - skipping"
+fi
 
 # DMS's Go backend needs raw access to /dev/input/* (evdev) to detect clicks
 # on its own bar/panels; without it, hover works but clicks silently no-op.
@@ -356,9 +558,16 @@ log "Restoring SELinux contexts"
 restorecon -Rv /etc/greetd \
     /etc/systemd/system/display-manager.service \
     /etc/skel/.config \
+    /etc/skel/.zsh \
+    /etc/skel/.tmux.conf \
+    /etc/skel/.local \
     /usr/lib/systemd/user/dms.service \
     /usr/lib/udev/rules.d/91-dms-input-uaccess.rules \
-    /usr/local/bin/rtk || true
+    /usr/local/bin/rtk \
+    /usr/local/bin/papirus-folders \
+    /usr/share/icons \
+    /etc/dconf/db/local.d \
+    /etc/fonts/conf.d/90-penguinos-font-defaults.conf || true
 
 # -------------------------------------------------------------------
 # Podman socket activation
