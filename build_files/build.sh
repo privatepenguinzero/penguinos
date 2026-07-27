@@ -19,9 +19,11 @@ add_dnf_option() {
   local opt="$1"
   grep -q "^$opt" "$DNF_CONF" || sed -i "/^\[main\]/a $opt" "$DNF_CONF"
 }
-add_dnf_option "max_parallel_downloads=3"
-add_dnf_option "fastestmirror=True"
-add_dnf_option "defaultyes=True"
+# fastestmirror is deliberately not set: its mirror probing costs more time on
+# CI runners than it saves. defaultyes is also left alone - this dnf.conf ships
+# in the image, and making `dnf remove` default to yes is a footgun on a
+# running system.
+add_dnf_option "max_parallel_downloads=10"
 
 # -------------------------------------------------------------------
 # Automatic updates (dnf5‑plugin‑automatic)
@@ -64,9 +66,13 @@ install_pkg_chunk() {
   local attempt=1
   while [[ $attempt -le $max_attempts ]]; do
     log "Installing chunk (attempt $attempt/$max_attempts): ${chunk[*]}"
-    # Clean metadata before each attempt to avoid corruption
-    dnf5 clean metadata >/dev/null 2>&1 || true
-    dnf5 makecache >/dev/null 2>&1 || true
+    # Only refresh metadata when retrying. Doing a full clean+makecache before
+    # every chunk means re-downloading every repo's metadata a dozen times per
+    # build; it only ever helps after a failure that suggests cache corruption.
+    if [[ $attempt -gt 1 ]]; then
+      dnf5 clean metadata >/dev/null 2>&1 || true
+      dnf5 makecache >/dev/null 2>&1 || true
+    fi
     if dnf5 -y install --skip-broken --skip-unavailable "${chunk[@]}"; then
       return 0
     else
@@ -87,9 +93,7 @@ for ((i=0; i<${#CORE_PKGS[@]}; i+=chunk_size)); do
     log "Core package installation failed"
     exit 1
   fi
-  # Force garbage collection between chunks
   sync
-  echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
 done
 
 # -------------------------------------------------------------------
@@ -236,9 +240,18 @@ EOF
 # -------------------------------------------------------------------
 # Claude Code CLI
 # -------------------------------------------------------------------
+# nodejs/npm come from CORE_PKGS above.
+#
+# --prefix /usr is load-bearing: on ostree systems /usr/local is a symlink to
+# /var/usrlocal, and /var is machine-local state that `bootc upgrade` never
+# updates. npm's default global prefix is /usr/local, so without this the CLI
+# is written into a directory that simply isn't part of the shipped image.
 log "Installing Claude Code CLI"
-dnf5 -y install nodejs npm
-npm install -g @anthropic-ai/claude-code
+npm install -g --prefix /usr --no-fund --no-audit @anthropic-ai/claude-code
+if [[ ! -x /usr/bin/claude ]]; then
+  log "Claude Code CLI not found at /usr/bin/claude after install"
+  exit 1
+fi
 
 # -------------------------------------------------------------------
 # RTK – Rust Token Killer (verified script download)
@@ -250,46 +263,29 @@ if [[ ! -s "$RTK_SCRIPT" ]]; then
   log "RTK install script appears malformed – aborting"
   exit 1
 fi
-RTK_INSTALL_DIR=/usr/local/bin bash "$RTK_SCRIPT"
+# /usr/bin, not /usr/local/bin - see the Claude Code note above for why.
+RTK_INSTALL_DIR=/usr/bin bash "$RTK_SCRIPT"
 rm -f "$RTK_SCRIPT"
-if [[ ! -x /usr/local/bin/rtk ]]; then
-  log "RTK binary not found at /usr/local/bin/rtk after install – aborting"
+if [[ ! -x /usr/bin/rtk ]]; then
+  log "RTK binary not found at /usr/bin/rtk after install – aborting"
   exit 1
 fi
 
-# Fetch a GitHub API URL with retries, since api.github.com's unauthenticated
-# rate limit (60 req/hr) is shared across all traffic from Actions runner NAT
-# IPs and can transiently 403 even on a fresh call.
-github_api_get() {
-  local url="$1"
-  local max_attempts=5
-  local attempt=1
-  local response
-  while [[ $attempt -le $max_attempts ]]; do
-    if response=$(curl -sSf "$url"); then
-      echo "$response"
-      return 0
-    fi
-    log "GitHub API request failed (attempt $attempt/$max_attempts): $url"
-    ((attempt++))
-    sleep 15
-  done
-  return 1
-}
+# Third-party tool versions are pinned rather than resolved from
+# .../releases/latest. This image rebuilds on a nightly cron, so tracking
+# "latest" meant its contents changed on their own and a bad upstream release
+# broke the build with nothing in this repo having changed. Renovate watches
+# these `renovate:` comments and opens a PR per bump, which keeps updates
+# automatic but visible and revertible. It also removes the dependency on
+# api.github.com, whose unauthenticated 60 req/hr limit is shared across all
+# GitHub Actions runner NAT IPs and used to 403 at random.
 
 # -------------------------------------------------------------------
-# NetBird – download latest release with verification placeholder
+# NetBird – pinned release download
 # -------------------------------------------------------------------
-log "Installing NetBird"
-NETBIRD_JSON=$(github_api_get https://api.github.com/repos/netbirdio/netbird/releases/latest) || {
-  log "Could not reach GitHub API for NetBird release info"
-  exit 1
-}
-NETBIRD_VERSION=$(echo "$NETBIRD_JSON" | jq -r '.tag_name // empty')
-if [[ -z "$NETBIRD_VERSION" ]]; then
-  log "Could not retrieve NetBird version"
-  exit 1
-fi
+# renovate: datasource=github-releases depName=netbirdio/netbird
+NETBIRD_VERSION="v0.75.0"
+log "Installing NetBird ${NETBIRD_VERSION}"
 NETBIRD_TAR="/tmp/netbird.tar.gz"
 if ! curl -fSL -o "$NETBIRD_TAR" "https://github.com/netbirdio/netbird/releases/download/${NETBIRD_VERSION}/netbird_${NETBIRD_VERSION#v}_linux_amd64.tar.gz"; then
   log "Failed to download NetBird"
@@ -302,16 +298,9 @@ rm -f "$NETBIRD_TAR"
 # -------------------------------------------------------------------
 # Superfile – terminal file manager (verified release download)
 # -------------------------------------------------------------------
-log "Installing Superfile"
-SUPERFILE_JSON=$(github_api_get https://api.github.com/repos/yorukot/superfile/releases/latest) || {
-  log "Could not reach GitHub API for Superfile release info"
-  exit 1
-}
-SUPERFILE_VERSION=$(echo "$SUPERFILE_JSON" | jq -r '.tag_name // empty')
-if [[ -z "$SUPERFILE_VERSION" ]]; then
-  log "Could not retrieve Superfile version"
-  exit 1
-fi
+# renovate: datasource=github-releases depName=yorukot/superfile
+SUPERFILE_VERSION="v1.6.0"
+log "Installing Superfile ${SUPERFILE_VERSION}"
 SUPERFILE_ASSET="superfile-linux-${SUPERFILE_VERSION}-amd64.tar.gz"
 SUPERFILE_TAR="/tmp/${SUPERFILE_ASSET}"
 if ! curl -fSL -o "$SUPERFILE_TAR" "https://github.com/yorukot/superfile/releases/download/${SUPERFILE_VERSION}/${SUPERFILE_ASSET}"; then
@@ -344,16 +333,9 @@ rm -rf "$SUPERFILE_TAR" "$SUPERFILE_CHECKSUMS" "$SUPERFILE_EXTRACT_DIR"
 # Upstream ships a single statically linked Rust binary per platform and
 # publishes no checksum file alongside it, so the artifact is verified by
 # executing it after install rather than by hash.
-log "Installing Herdr"
-HERDR_JSON=$(github_api_get https://api.github.com/repos/ogulcancelik/herdr/releases/latest) || {
-  log "Could not reach GitHub API for Herdr release info"
-  exit 1
-}
-HERDR_VERSION=$(echo "$HERDR_JSON" | jq -r '.tag_name // empty')
-if [[ -z "$HERDR_VERSION" ]]; then
-  log "Could not retrieve Herdr version"
-  exit 1
-fi
+# renovate: datasource=github-releases depName=ogulcancelik/herdr
+HERDR_VERSION="v0.7.5"
+log "Installing Herdr ${HERDR_VERSION}"
 HERDR_DOWNLOAD="/tmp/herdr-linux-x86_64"
 if ! curl -fSL -o "$HERDR_DOWNLOAD" "https://github.com/ogulcancelik/herdr/releases/download/${HERDR_VERSION}/herdr-linux-x86_64"; then
   log "Failed to download Herdr"
@@ -550,9 +532,9 @@ PAPIRUS_FOLDERS_SRC="/tmp/papirus-folders-src"
 if git clone --depth 1 https://github.com/catppuccin/papirus-folders.git "$PAPIRUS_FOLDERS_SRC"; then
   cp -rf "$PAPIRUS_FOLDERS_SRC"/src/* /usr/share/icons/Papirus/
   rm -rf "$PAPIRUS_FOLDERS_SRC"
-  if curl -fsSL -o /usr/local/bin/papirus-folders https://raw.githubusercontent.com/PapirusDevelopmentTeam/papirus-folders/master/papirus-folders; then
-    chmod +x /usr/local/bin/papirus-folders
-    /usr/local/bin/papirus-folders -C cat-mocha-peach --theme Papirus-Dark
+  if curl -fsSL -o /usr/bin/papirus-folders https://raw.githubusercontent.com/PapirusDevelopmentTeam/papirus-folders/master/papirus-folders; then
+    chmod +x /usr/bin/papirus-folders
+    /usr/bin/papirus-folders -C cat-mocha-peach --theme Papirus-Dark
   else
     log "Failed to download papirus-folders script - skipping recolor"
   fi
@@ -721,8 +703,9 @@ restorecon -Rv /etc/greetd \
     /etc/skel/.local \
     /usr/lib/systemd/user/dms.service \
     /usr/lib/udev/rules.d/91-dms-input-uaccess.rules \
-    /usr/local/bin/rtk \
-    /usr/local/bin/papirus-folders \
+    /usr/bin/rtk \
+    /usr/bin/papirus-folders \
+    /usr/bin/herdr \
     /usr/share/icons \
     /etc/dconf/db/local.d \
     /etc/fonts/conf.d/90-penguinos-font-defaults.conf || true
