@@ -5,3 +5,4 @@ _build-*/**
 CLAUDE.md
 .claude/
 build.log
+graphify-out/

@@ -6,10 +6,34 @@
 
   "rebaseWhen": "never",
 
+  // Renovate is the only dependency bot for this repo. .github/dependabot.yml
+  // was removed: it could only update GitHub Actions, which Renovate already
+  // handles, and it had no way to reach the pinned tool versions inside
+  // build_files/build.sh.
+  "customManagers": [
+    {
+      // Matches a `# renovate: datasource=... depName=...` comment sitting
+      // directly above a FOO_VERSION="v1.2.3" assignment in the build script.
+      "customType": "regex",
+      "managerFilePatterns": ["/^build_files/build\\.sh$/"],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>[a-z-]+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*[A-Z0-9_]+_VERSION=\"(?<currentValue>[^\"]+)\"",
+      ],
+    },
+  ],
+
   "packageRules": [
     {
       "automerge": true,
       "matchUpdateTypes": ["pin", "pinDigest"]
+    },
+    {
+      // These tools are pulled straight from GitHub releases with no lockfile
+      // behind them, so every bump changes what actually ships in the image.
+      // Keep those PRs separate and never auto-merged.
+      "matchFileNames": ["build_files/build.sh"],
+      "automerge": false,
+      "separateMinorPatch": true,
     },
     {
       "enabled": false,

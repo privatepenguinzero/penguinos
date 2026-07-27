@@ -21,8 +21,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Runs first and gates the image build: shellcheck takes seconds, while a
+  # broken build.sh otherwise only surfaces after a full image build.
+  lint:
+    name: Lint shell scripts
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Install just
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 #v4.0.0
+
+      - name: Check Just syntax
+        run: just check
+
+      - name: Shellcheck
+        run: just lint
+
   build_push:
     name: Build and push image
+    needs: lint
     runs-on: ubuntu-24.04
 
     permissions:
@@ -40,11 +61,6 @@ jobs:
 
       - name: Install just
         uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 #v4.0.0
-
-      - name: Check Just Syntax
-        shell: bash
-        run: |
-          just check
 
       - name: Image Name
         id: image-name
