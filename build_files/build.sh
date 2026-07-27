@@ -45,7 +45,7 @@ dnf5 -y install openssh-server && systemctl enable sshd || true
 # -------------------------------------------------------------------
 log "Installing core desktop and virtualization packages"
 CORE_PKGS=(
-  nautilus mpv gnome-terminal gnome-system-monitor gnome-calculator loupe mc btop rsync tmux fastfetch unzip git wget curl bat eza duf jq tealdeer iperf3 just
+  nautilus mpv gnome-terminal gnome-system-monitor gnome-calculator loupe mc btop rsync fastfetch unzip git wget curl bat eza duf jq tealdeer iperf3 just
   qemu-kvm libvirt virt-install virt-manager gnome-boxes distrobox podman-compose
   seahorse qt6-qtwayland
   cargo
@@ -339,6 +339,39 @@ install -m 0755 "$SUPERFILE_BIN" /usr/bin/spf
 rm -rf "$SUPERFILE_TAR" "$SUPERFILE_CHECKSUMS" "$SUPERFILE_EXTRACT_DIR"
 
 # -------------------------------------------------------------------
+# Herdr – terminal/agent multiplexer, used here instead of tmux
+# -------------------------------------------------------------------
+# Upstream ships a single statically linked Rust binary per platform and
+# publishes no checksum file alongside it, so the artifact is verified by
+# executing it after install rather than by hash.
+log "Installing Herdr"
+HERDR_JSON=$(github_api_get https://api.github.com/repos/ogulcancelik/herdr/releases/latest) || {
+  log "Could not reach GitHub API for Herdr release info"
+  exit 1
+}
+HERDR_VERSION=$(echo "$HERDR_JSON" | jq -r '.tag_name // empty')
+if [[ -z "$HERDR_VERSION" ]]; then
+  log "Could not retrieve Herdr version"
+  exit 1
+fi
+HERDR_DOWNLOAD="/tmp/herdr-linux-x86_64"
+if ! curl -fSL -o "$HERDR_DOWNLOAD" "https://github.com/ogulcancelik/herdr/releases/download/${HERDR_VERSION}/herdr-linux-x86_64"; then
+  log "Failed to download Herdr"
+  exit 1
+fi
+install -m 0755 "$HERDR_DOWNLOAD" /usr/bin/herdr
+rm -f "$HERDR_DOWNLOAD"
+if ! /usr/bin/herdr --version; then
+  log "Herdr binary is not runnable after install"
+  exit 1
+fi
+install -d /usr/share/zsh/site-functions
+if ! /usr/bin/herdr completion zsh > /usr/share/zsh/site-functions/_herdr; then
+  log "Failed to generate Herdr zsh completions - skipping"
+  rm -f /usr/share/zsh/site-functions/_herdr
+fi
+
+# -------------------------------------------------------------------
 # Google Fonts – download and install
 # -------------------------------------------------------------------
 log "Installing Google Fonts"
@@ -556,17 +589,23 @@ else
   log "Failed to download bat Catppuccin theme - skipping"
 fi
 
-log "Installing Catppuccin theme for tmux"
-mkdir -p /etc/skel/.config/tmux/plugins/catppuccin
-if git clone --depth 1 https://github.com/catppuccin/tmux.git /etc/skel/.config/tmux/plugins/catppuccin/tmux; then
-  rm -rf /etc/skel/.config/tmux/plugins/catppuccin/tmux/.git
-  cat > /etc/skel/.tmux.conf <<'EOF'
-set -g @catppuccin_flavor "mocha"
-run ~/.config/tmux/plugins/catppuccin/tmux/catppuccin.tmux
+log "Installing Catppuccin theme for herdr"
+# Herdr ships Catppuccin as a built-in theme (its "catppuccin" is the Mocha
+# flavour), so there's nothing to download - just select it and override the
+# accent token with Mocha Peach to match the rest of the image.
+mkdir -p /etc/skel/.config/herdr
+cat > /etc/skel/.config/herdr/config.toml <<'EOF'
+[theme]
+name = "catppuccin"
+
+[theme.custom]
+accent = "#fab387"
+
+[update]
+# herdr lives on the read-only bootc image and is updated by rebasing, so
+# `herdr update` can't replace it - don't nag about new versions.
+version_check = false
 EOF
-else
-  log "Failed to clone catppuccin/tmux - skipping"
-fi
 
 log "Installing Catppuccin theme for lazygit"
 mkdir -p /etc/skel/.config/lazygit
@@ -648,7 +687,6 @@ restorecon -Rv /etc/greetd \
     /etc/systemd/system/display-manager.service \
     /etc/skel/.config \
     /etc/skel/.zsh \
-    /etc/skel/.tmux.conf \
     /etc/skel/.local \
     /usr/lib/systemd/user/dms.service \
     /usr/lib/udev/rules.d/91-dms-input-uaccess.rules \
