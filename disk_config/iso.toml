@@ -1,0 +1,34 @@
+# Anaconda ISO installer configuration.
+#
+# The Justfile (`just build-iso`) and .github/workflows/build-disk.yml both
+# reference this file by name; it previously did not exist, so ISO builds
+# failed on a missing config.
+#
+# Every Anaconda module except Subscription is left enabled on purpose. The
+# "minimal" variant used by GNOME-based images disables Users, Network and
+# Timezone and defers them to gnome-initial-setup on first boot - but this
+# image replaces GDM with greetd and runs DMS + niri, so that wizard never
+# runs. If Anaconda did not create the account, the installed system would
+# boot to a greeter with no user to log in as.
+
+[customizations.installer.kickstart]
+contents = """
+%post
+bootc switch --mutate-in-place --transport registry ghcr.io/privatepenguinzero/penguinos:latest
+%end
+"""
+
+[customizations.installer.modules]
+enable = [
+  "org.fedoraproject.Anaconda.Modules.Storage",
+  "org.fedoraproject.Anaconda.Modules.Runtime",
+  "org.fedoraproject.Anaconda.Modules.Network",
+  "org.fedoraproject.Anaconda.Modules.Security",
+  "org.fedoraproject.Anaconda.Modules.Services",
+  "org.fedoraproject.Anaconda.Modules.Users",
+  "org.fedoraproject.Anaconda.Modules.Timezone"
+]
+
+disable = [
+  "org.fedoraproject.Anaconda.Modules.Subscription",
+]
