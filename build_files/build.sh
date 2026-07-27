@@ -374,25 +374,56 @@ fi
 # -------------------------------------------------------------------
 # Google Fonts – download and install
 # -------------------------------------------------------------------
-log "Installing Google Fonts"
-GOOGLE_ZIP="/tmp/google-fonts.zip"
-if curl -fSL -o "$GOOGLE_ZIP" https://github.com/google/fonts/archive/main.zip; then
+# The full google/fonts repo is a 1.6 GB download that unpacks to ~2.9 GB and
+# 19k files, almost all of it families nobody on this image will ever select,
+# plus per-family LICENSE/METADATA files that fc-cache then has to walk. Pull a
+# curated set instead, via a blobless sparse checkout so only the selected
+# directories are ever fetched.
+log "Installing Google Fonts (curated subset)"
+GOOGLE_FONT_DIRS=(
+  ofl/inter ofl/roboto ofl/robotomono ofl/opensans ofl/lato
+  ofl/montserrat ofl/sourcecodepro ofl/nunito ofl/poppins ofl/worksans
+  ofl/firacode ofl/firasans ofl/ibmplexsans ofl/ibmplexmono
+)
+GOOGLE_FONTS_SRC="/tmp/google-fonts-src"
+if git clone --depth 1 --filter=blob:none --sparse https://github.com/google/fonts.git "$GOOGLE_FONTS_SRC" \
+  && git -C "$GOOGLE_FONTS_SRC" sparse-checkout set "${GOOGLE_FONT_DIRS[@]}"; then
   mkdir -p /usr/share/fonts/google
-  unzip -q "$GOOGLE_ZIP" -d /usr/share/fonts/google
-  rm -f "$GOOGLE_ZIP"
+  # Ship only the font files themselves, flattened - the repo layout, licence
+  # and metadata files are of no use to fontconfig.
+  find "$GOOGLE_FONTS_SRC" -type f \( -name '*.ttf' -o -name '*.otf' \) \
+    -exec install -m 0644 -t /usr/share/fonts/google {} +
+  log "Installed $(find /usr/share/fonts/google -type f | wc -l) Google Font files"
 else
-  log "Failed to download Google Fonts – skipping"
+  log "Failed to fetch Google Fonts – skipping"
 fi
+rm -rf "$GOOGLE_FONTS_SRC"
 
 # -------------------------------------------------------------------
 # JetBrainsMono Nerd Font – verified download
 # -------------------------------------------------------------------
-log "Installing JetBrainsMono Nerd Font"
+# The upstream archive carries 96 files: every weight of three separate
+# families (the base one plus the Mono and Propo spacing variants), ~223 MB
+# installed. Ghostty and the fontconfig monospace alias both ask for
+# "JetBrainsMono Nerd Font", which is the base family, so extract only its four
+# standard styles - about 10 MB.
+# renovate: datasource=github-releases depName=ryanoasis/nerd-fonts
+NERDFONT_VERSION="v3.4.0"
+log "Installing JetBrainsMono Nerd Font ${NERDFONT_VERSION}"
 JBZIP="/tmp/JetBrainsMono.zip"
-if curl -fSL -o "$JBZIP" https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip; then
+if curl -fSL -o "$JBZIP" "https://github.com/ryanoasis/nerd-fonts/releases/download/${NERDFONT_VERSION}/JetBrainsMono.zip"; then
   mkdir -p /usr/share/fonts/JetBrainsMonoNerdFont
-  unzip -q "$JBZIP" -d /usr/share/fonts/JetBrainsMonoNerdFont
+  unzip -q -j -o "$JBZIP" \
+    'JetBrainsMonoNerdFont-Regular.ttf' \
+    'JetBrainsMonoNerdFont-Italic.ttf' \
+    'JetBrainsMonoNerdFont-Bold.ttf' \
+    'JetBrainsMonoNerdFont-BoldItalic.ttf' \
+    -d /usr/share/fonts/JetBrainsMonoNerdFont
   rm -f "$JBZIP"
+  if [[ ! -f /usr/share/fonts/JetBrainsMonoNerdFont/JetBrainsMonoNerdFont-Regular.ttf ]]; then
+    log "JetBrainsMono Nerd Font archive layout changed - no fonts extracted"
+    exit 1
+  fi
 else
   log "Failed to download JetBrainsMono Nerd Font – skipping"
 fi
