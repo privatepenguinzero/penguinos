@@ -1,0 +1,60 @@
+---
+# The nightly build pushes six tags per run (latest, <date>, <date>-<sha>, ...),
+# all pointing at one image digest. Nothing in GHCR expires on its own, so
+# without this job the package accumulates a new digest every night forever,
+# plus the untagged digests left behind whenever a tag is moved and the Cosign
+# .sig artifacts attached to each one.
+name: Prune old images
+on:
+  schedule:
+    # Two hours after build.yml's 10:05 UTC cron, so the nightly image is
+    # already pushed and counts as one of the kept versions.
+    - cron: '05 12 * * *'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "List what would be deleted without deleting it"
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    name: Prune old images
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Install just
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 #v4.0.0
+
+      # Same source of truth as build.yml: IMAGE_NAME in image-template.env.
+      - name: Image Name
+        run: |
+          IMAGE_NAME=$(just image_name)
+
+          echo "IMAGE_NAME=${IMAGE_NAME,,}" >> $GITHUB_ENV
+
+      - name: Prune
+        uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1.2.2
+        with:
+          package: ${{ env.IMAGE_NAME }}
+          # ~30 nightlies, i.e. roughly a month of rollback targets. Counted in
+          # image digests, not tags, so one build is one unit here.
+          keep-n-tagged: 30
+          delete-untagged: true
+          # Cosign signatures whose image has been pruned.
+          delete-orphaned-images: true
+          # The rolling tag, protected regardless of the keep window.
+          exclude-tags: latest
+          validate: true
+          dry-run: ${{ inputs.dry-run || false }}
