@@ -4,6 +4,10 @@ on:
   pull_request:
     branches:
       - main
+    paths-ignore:
+      - '**/README.md'
+      # Housekeeping of what is already published; cannot change image contents.
+      - '.github/workflows/prune-images.yml'
   schedule:
     - cron: '05 10 * * *'  # 10:05am UTC everyday
   push:
@@ -11,6 +15,7 @@ on:
       - main
     paths-ignore:
       - '**/README.md'
+      - '.github/workflows/prune-images.yml'
   workflow_dispatch:
 
 env:
