@@ -220,7 +220,11 @@ git clone --depth 1 https://github.com/marlonrichert/zsh-autocomplete.git "$ZSH_
 git clone --depth 1 https://github.com/zsh-users/zsh-history-substring-search.git "$ZSH_DIR/custom/plugins/zsh-history-substring-search"
 git clone --depth 1 https://github.com/zsh-users/zsh-syntax-highlighting.git "$ZSH_DIR/custom/plugins/zsh-syntax-highlighting"
 unset GIT_TERMINAL_PROMPT GIT_ASKPASS
-sed -i 's/plugins=(git)/plugins=(dnf aliases genpass git zsh-autosuggestions zsh-autocomplete zsh-history-substring-search z zsh-syntax-highlighting)/' /etc/skel/.zshrc
+# The `z` plugin is deliberately absent: zoxide below already replaces `cd`
+# with a frecency-ranked jumper, and `z` is a second one keeping its own
+# database in ~/.z. Two jumpers means neither learns from the directories you
+# visit through the other.
+sed -i 's/plugins=(git)/plugins=(dnf aliases genpass git zsh-autosuggestions zsh-autocomplete zsh-history-substring-search zsh-syntax-highlighting)/' /etc/skel/.zshrc
 # Starship draws the prompt, so Oh My Zsh must not draw one of its own: two
 # prompt engines fight and the last one to run wins, unpredictably. Starship
 # is already what this image gives bash (via ublue's bling.sh), so zsh gets
@@ -733,6 +737,15 @@ if curl "${CURL_RETRY[@]}" -fsSL -o /etc/skel/.config/fzf/catppuccin-mocha.sh ht
   echo 'source ~/.config/fzf/catppuccin-mocha.sh' >> /etc/skel/.zshrc
 else
   log "Failed to download fzf Catppuccin theme - skipping"
+fi
+
+# The theme above only sets colours. The key bindings are what make fzf worth
+# having - Ctrl+R over history, Ctrl+T for a file path, Alt+C to jump into a
+# subdirectory - and they live in a separate file that nothing else loads.
+if [[ -f /usr/share/fzf/shell/key-bindings.zsh ]]; then
+  echo 'source /usr/share/fzf/shell/key-bindings.zsh' >> /etc/skel/.zshrc
+else
+  log "fzf key-bindings.zsh not found - shortcuts will be unavailable"
 fi
 
 log "Installing Catppuccin theme for starship"
