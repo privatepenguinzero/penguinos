@@ -382,32 +382,47 @@ if ! /usr/bin/herdr completion zsh > /usr/share/zsh/site-functions/_herdr; then
 fi
 
 # -------------------------------------------------------------------
-# Google Fonts – download and install
+# Google Fonts – curated subset, from the Fedora repositories
 # -------------------------------------------------------------------
-# The full google/fonts repo is a 1.6 GB download that unpacks to ~2.9 GB and
-# 19k files, almost all of it families nobody on this image will ever select,
-# plus per-family LICENSE/METADATA files that fc-cache then has to walk. Pull a
-# curated set instead, via a blobless sparse checkout so only the selected
-# directories are ever fetched.
-log "Installing Google Fonts (curated subset)"
-GOOGLE_FONT_DIRS=(
-  ofl/inter ofl/roboto ofl/robotomono ofl/opensans ofl/lato
-  ofl/montserrat ofl/sourcecodepro ofl/nunito ofl/poppins ofl/worksans
-  ofl/firacode ofl/firasans ofl/ibmplexsans ofl/ibmplexmono
+# These used to come from a blobless sparse checkout of google/fonts. Fedora
+# packages 12 of the 14 families for the same ~35 MB on disk, which removes a
+# clone of a very large repository from every nightly build - the cost of that
+# clone is in the repo metadata, not in how many directories get checked out,
+# so fetching even one family that way is expensive.
+#
+# Poppins and Fira Sans are not packaged in Fedora, Terra or RPM Fusion and are
+# therefore dropped: nothing in this image selects them by name, they only ever
+# populated the font menu. Do NOT reintroduce the clone to get them back.
+#
+# Failure here is fatal on purpose. install_pkg_chunk passes --skip-unavailable,
+# so a package renamed upstream would otherwise be skipped in silence and the
+# image would quietly ship a different set of fonts than this list claims.
+log "Installing Google Fonts (curated subset, from Fedora)"
+GOOGLE_FONT_PKGS=(
+  rsms-inter-vf-fonts              # Inter
+  google-roboto-fonts              # Roboto
+  google-roboto-mono-fonts         # Roboto Mono
+  open-sans-fonts                  # Open Sans
+  lato-fonts                       # Lato
+  julietaula-montserrat-fonts      # Montserrat
+  adobe-source-code-pro-fonts      # Source Code Pro
+  vernnobile-nunito-fonts          # Nunito
+  weiweihuanghuang-work-sans-fonts # Work Sans
+  fira-code-fonts                  # Fira Code
+  ibm-plex-sans-fonts              # IBM Plex Sans
+  ibm-plex-mono-fonts              # IBM Plex Mono
 )
-GOOGLE_FONTS_SRC="/tmp/google-fonts-src"
-if git clone --depth 1 --filter=blob:none --sparse https://github.com/google/fonts.git "$GOOGLE_FONTS_SRC" \
-  && git -C "$GOOGLE_FONTS_SRC" sparse-checkout set "${GOOGLE_FONT_DIRS[@]}"; then
-  mkdir -p /usr/share/fonts/google
-  # Ship only the font files themselves, flattened - the repo layout, licence
-  # and metadata files are of no use to fontconfig.
-  find "$GOOGLE_FONTS_SRC" -type f \( -name '*.ttf' -o -name '*.otf' \) \
-    -exec install -m 0644 -t /usr/share/fonts/google {} +
-  log "Installed $(find /usr/share/fonts/google -type f | wc -l) Google Font files"
-else
-  log "Failed to fetch Google Fonts – skipping"
+if ! install_pkg_chunk "${GOOGLE_FONT_PKGS[@]}"; then
+  log "Failed to install Google Fonts packages"
+  exit 1
 fi
-rm -rf "$GOOGLE_FONTS_SRC"
+for font_pkg in "${GOOGLE_FONT_PKGS[@]}"; do
+  if ! rpm -q "$font_pkg" >/dev/null 2>&1; then
+    log "Google Font package not installed: $font_pkg (renamed or dropped upstream?)"
+    exit 1
+  fi
+done
+log "Installed ${#GOOGLE_FONT_PKGS[@]} Google Font packages"
 
 # -------------------------------------------------------------------
 # JetBrainsMono Nerd Font – verified download
