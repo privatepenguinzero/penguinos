@@ -221,7 +221,13 @@ git clone --depth 1 https://github.com/zsh-users/zsh-history-substring-search.gi
 git clone --depth 1 https://github.com/zsh-users/zsh-syntax-highlighting.git "$ZSH_DIR/custom/plugins/zsh-syntax-highlighting"
 unset GIT_TERMINAL_PROMPT GIT_ASKPASS
 sed -i 's/plugins=(git)/plugins=(dnf aliases genpass git zsh-autosuggestions zsh-autocomplete zsh-history-substring-search z zsh-syntax-highlighting)/' /etc/skel/.zshrc
-sed -i 's/ZSH_THEME="robbyrussell"/ZSH_THEME="jonathan"/' /etc/skel/.zshrc
+# Starship draws the prompt, so Oh My Zsh must not draw one of its own: two
+# prompt engines fight and the last one to run wins, unpredictably. Starship
+# is already what this image gives bash (via ublue's bling.sh), so zsh gets
+# the same prompt rather than a second, different one.
+sed -i 's/ZSH_THEME="robbyrussell"/ZSH_THEME=""/' /etc/skel/.zshrc
+# shellcheck disable=SC2016  # must reach .zshrc literally, like the zoxide line
+echo 'eval "$(starship init zsh)"' >> /etc/skel/.zshrc
 # Single quotes on purpose: the command substitution has to reach .zshrc as
 # literal text and run when the shell starts. With double quotes bash expands
 # it here, during the build, and bakes zoxide's ~100 lines of init output into
