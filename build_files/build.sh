@@ -8,6 +8,20 @@ log() {
   echo "[build.sh] $*"
 }
 
+# Retry options shared by every download in this script.
+#
+# The image rebuilds on a nightly cron, so a one-off CDN hiccup breaks a build
+# with nothing in the repo having changed: run 30434214100 died on
+# "(35) Recv failure: Connection reset by peer" fetching a GitHub release asset
+# that served fine seconds later, and only a manual rerun cleared it.
+#
+# --retry-all-errors is the part that matters. Plain --retry only covers
+# transient HTTP responses (5xx, 408, 429) and timeouts; connection resets and
+# TLS handshake failures need this flag as well. Cost of a genuinely dead URL
+# is three extra attempts, roughly six seconds, which is far cheaper than
+# losing a nightly image.
+CURL_RETRY=(--retry 3 --retry-delay 2 --retry-all-errors)
+
 # Ensure directories required for symlinks exist before package installs
 mkdir -p /var/usrlocal/bin /var/usrlocal/lib /var/roothome
 
@@ -148,7 +162,7 @@ cp -rf /ctx/dot_config/ghostty/config /etc/skel/.config/ghostty/
 log "Preparing /opt for Brave"
 rm -f /opt && mkdir -p /opt /var/opt
 log "Adding Brave repository and keyring"
-if ! curl -fsSL https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo -o /etc/yum.repos.d/brave-browser.repo; then
+if ! curl "${CURL_RETRY[@]}" -fsSL https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo -o /etc/yum.repos.d/brave-browser.repo; then
   log "Failed to download Brave repo file"
   exit 1
 fi
@@ -175,13 +189,13 @@ dnf5 -y install niri niri-settings --exclude=alacritty
 # Cursor editor – download with checksum verification via dnf
 # -------------------------------------------------------------------
 log "Installing Cursor"
-CURSOR_RPM_URL=$(curl -sSf "https://cursor.com/api/download?platform=linux-x64&releaseTrack=stable" | jq -r '.rpmUrl')
+CURSOR_RPM_URL=$(curl "${CURL_RETRY[@]}" -sSf "https://cursor.com/api/download?platform=linux-x64&releaseTrack=stable" | jq -r '.rpmUrl')
 if [[ -z "$CURSOR_RPM_URL" || "$CURSOR_RPM_URL" == "null" ]]; then
   log "Could not determine Cursor RPM URL"
   exit 1
 fi
 TMP_RPM="/tmp/cursor.rpm"
-if ! curl -fSL -o "$TMP_RPM" "$CURSOR_RPM_URL"; then
+if ! curl "${CURL_RETRY[@]}" -fSL -o "$TMP_RPM" "$CURSOR_RPM_URL"; then
   log "Failed to download Cursor RPM"
   exit 1
 fi
@@ -263,7 +277,7 @@ fi
 RTK_INSTALLER_COMMIT="36591fb00d650bf987b57483c0b3a395a35a8dc1"
 log "Installing RTK"
 RTK_SCRIPT="/tmp/rtk-install.sh"
-curl -fsSL "https://raw.githubusercontent.com/rtk-ai/rtk/${RTK_INSTALLER_COMMIT}/install.sh" -o "$RTK_SCRIPT"
+curl "${CURL_RETRY[@]}" -fsSL "https://raw.githubusercontent.com/rtk-ai/rtk/${RTK_INSTALLER_COMMIT}/install.sh" -o "$RTK_SCRIPT"
 if [[ ! -s "$RTK_SCRIPT" ]]; then
   log "RTK install script appears malformed – aborting"
   exit 1
@@ -303,12 +317,12 @@ log "Installing NetBird ${NETBIRD_VERSION}"
 # is keyed by filename, can be fed straight to `sha256sum -c`.
 NETBIRD_ASSET="netbird_${NETBIRD_VERSION#v}_linux_amd64.tar.gz"
 NETBIRD_TAR="/tmp/${NETBIRD_ASSET}"
-if ! curl -fSL -o "$NETBIRD_TAR" "https://github.com/netbirdio/netbird/releases/download/${NETBIRD_VERSION}/${NETBIRD_ASSET}"; then
+if ! curl "${CURL_RETRY[@]}" -fSL -o "$NETBIRD_TAR" "https://github.com/netbirdio/netbird/releases/download/${NETBIRD_VERSION}/${NETBIRD_ASSET}"; then
   log "Failed to download NetBird"
   exit 1
 fi
 NETBIRD_CHECKSUMS="/tmp/netbird-checksums.txt"
-if ! curl -fsSL -o "$NETBIRD_CHECKSUMS" "https://github.com/netbirdio/netbird/releases/download/${NETBIRD_VERSION}/netbird_${NETBIRD_VERSION#v}_checksums.txt"; then
+if ! curl "${CURL_RETRY[@]}" -fsSL -o "$NETBIRD_CHECKSUMS" "https://github.com/netbirdio/netbird/releases/download/${NETBIRD_VERSION}/netbird_${NETBIRD_VERSION#v}_checksums.txt"; then
   log "Failed to download NetBird checksums"
   exit 1
 fi
@@ -328,7 +342,7 @@ SUPERFILE_VERSION="v1.6.0"
 log "Installing Superfile ${SUPERFILE_VERSION}"
 SUPERFILE_ASSET="superfile-linux-${SUPERFILE_VERSION}-amd64.tar.gz"
 SUPERFILE_TAR="/tmp/${SUPERFILE_ASSET}"
-if ! curl -fSL -o "$SUPERFILE_TAR" "https://github.com/yorukot/superfile/releases/download/${SUPERFILE_VERSION}/${SUPERFILE_ASSET}"; then
+if ! curl "${CURL_RETRY[@]}" -fSL -o "$SUPERFILE_TAR" "https://github.com/yorukot/superfile/releases/download/${SUPERFILE_VERSION}/${SUPERFILE_ASSET}"; then
   log "Failed to download Superfile"
   exit 1
 fi
@@ -336,7 +350,7 @@ SUPERFILE_CHECKSUMS="/tmp/superfile-checksums.txt"
 # A missing checksum file is treated as a hard failure, not a warning: anyone
 # able to swap the tarball can drop the manifest too, so skipping verification
 # on a 404 would defeat the check it is meant to enforce.
-if ! curl -fsSL -o "$SUPERFILE_CHECKSUMS" "https://github.com/yorukot/superfile/releases/download/${SUPERFILE_VERSION}/superfile-${SUPERFILE_VERSION}-checksums.txt"; then
+if ! curl "${CURL_RETRY[@]}" -fsSL -o "$SUPERFILE_CHECKSUMS" "https://github.com/yorukot/superfile/releases/download/${SUPERFILE_VERSION}/superfile-${SUPERFILE_VERSION}-checksums.txt"; then
   log "Failed to download Superfile checksums"
   exit 1
 fi
@@ -365,7 +379,7 @@ rm -rf "$SUPERFILE_TAR" "$SUPERFILE_CHECKSUMS" "$SUPERFILE_EXTRACT_DIR"
 HERDR_VERSION="v0.7.5"
 log "Installing Herdr ${HERDR_VERSION}"
 HERDR_DOWNLOAD="/tmp/herdr-linux-x86_64"
-if ! curl -fSL -o "$HERDR_DOWNLOAD" "https://github.com/ogulcancelik/herdr/releases/download/${HERDR_VERSION}/herdr-linux-x86_64"; then
+if ! curl "${CURL_RETRY[@]}" -fSL -o "$HERDR_DOWNLOAD" "https://github.com/ogulcancelik/herdr/releases/download/${HERDR_VERSION}/herdr-linux-x86_64"; then
   log "Failed to download Herdr"
   exit 1
 fi
@@ -436,10 +450,10 @@ log "Installed ${#GOOGLE_FONT_PKGS[@]} Google Font packages"
 NERDFONT_VERSION="v3.4.0"
 log "Installing JetBrainsMono Nerd Font ${NERDFONT_VERSION}"
 JBZIP="/tmp/JetBrainsMono.zip"
-if curl -fSL -o "$JBZIP" "https://github.com/ryanoasis/nerd-fonts/releases/download/${NERDFONT_VERSION}/JetBrainsMono.zip"; then
+if curl "${CURL_RETRY[@]}" -fSL -o "$JBZIP" "https://github.com/ryanoasis/nerd-fonts/releases/download/${NERDFONT_VERSION}/JetBrainsMono.zip"; then
   # Upstream publishes one SHA-256.txt covering every font archive in the release.
   NERDFONT_CHECKSUMS="/tmp/nerd-fonts-SHA-256.txt"
-  if ! curl -fsSL -o "$NERDFONT_CHECKSUMS" "https://github.com/ryanoasis/nerd-fonts/releases/download/${NERDFONT_VERSION}/SHA-256.txt"; then
+  if ! curl "${CURL_RETRY[@]}" -fsSL -o "$NERDFONT_CHECKSUMS" "https://github.com/ryanoasis/nerd-fonts/releases/download/${NERDFONT_VERSION}/SHA-256.txt"; then
     log "Failed to download JetBrainsMono Nerd Font checksums"
     exit 1
   fi
@@ -568,7 +582,7 @@ cp -rf /ctx/dot_config/DankMaterialShell/settings.json /etc/skel/.config/DankMat
 CURSORS_VERSION="v2.0.0"
 log "Installing Catppuccin cursors ${CURSORS_VERSION}"
 CURSORS_ZIP="/tmp/catppuccin-cursors.zip"
-if curl -fSL -o "$CURSORS_ZIP" "https://github.com/catppuccin/cursors/releases/download/${CURSORS_VERSION}/catppuccin-mocha-peach-cursors.zip"; then
+if curl "${CURL_RETRY[@]}" -fSL -o "$CURSORS_ZIP" "https://github.com/catppuccin/cursors/releases/download/${CURSORS_VERSION}/catppuccin-mocha-peach-cursors.zip"; then
   unzip -q -o "$CURSORS_ZIP" -d /usr/share/icons
   rm -f "$CURSORS_ZIP"
 else
@@ -586,7 +600,7 @@ if git clone --depth 1 https://github.com/catppuccin/papirus-folders.git "$PAPIR
   # release tag rather than the master tip. Upstream publishes no checksum
   # alongside it, so it is verified by executing it after install - the same
   # approach used for Herdr above.
-  if curl -fsSL -o /usr/bin/papirus-folders "https://raw.githubusercontent.com/PapirusDevelopmentTeam/papirus-folders/${PAPIRUS_FOLDERS_VERSION}/papirus-folders"; then
+  if curl "${CURL_RETRY[@]}" -fsSL -o /usr/bin/papirus-folders "https://raw.githubusercontent.com/PapirusDevelopmentTeam/papirus-folders/${PAPIRUS_FOLDERS_VERSION}/papirus-folders"; then
     chmod +x /usr/bin/papirus-folders
     if ! /usr/bin/papirus-folders --version; then
       log "papirus-folders is not runnable after install - aborting"
@@ -639,7 +653,7 @@ dconf update
 
 log "Installing Catppuccin theme for btop"
 mkdir -p /etc/skel/.config/btop/themes
-if curl -fsSL -o /etc/skel/.config/btop/themes/catppuccin_mocha.theme https://raw.githubusercontent.com/catppuccin/btop/main/themes/catppuccin_mocha.theme; then
+if curl "${CURL_RETRY[@]}" -fsSL -o /etc/skel/.config/btop/themes/catppuccin_mocha.theme https://raw.githubusercontent.com/catppuccin/btop/main/themes/catppuccin_mocha.theme; then
   cat > /etc/skel/.config/btop/btop.conf <<'EOF'
 color_theme = "catppuccin_mocha"
 theme_background = False
@@ -650,7 +664,7 @@ fi
 
 log "Installing Catppuccin theme for bat"
 mkdir -p /etc/skel/.config/bat/themes
-if curl -fsSL -o "/etc/skel/.config/bat/themes/Catppuccin Mocha.tmTheme" "https://github.com/catppuccin/bat/raw/main/themes/Catppuccin%20Mocha.tmTheme"; then
+if curl "${CURL_RETRY[@]}" -fsSL -o "/etc/skel/.config/bat/themes/Catppuccin Mocha.tmTheme" "https://github.com/catppuccin/bat/raw/main/themes/Catppuccin%20Mocha.tmTheme"; then
   echo '--theme="Catppuccin Mocha"' > /etc/skel/.config/bat/config
   # Custom bat themes need a per-user binary cache; build it lazily on first
   # shell start instead of trying to precompute it for a user that doesn't
@@ -680,13 +694,13 @@ EOF
 
 log "Installing Catppuccin theme for lazygit"
 mkdir -p /etc/skel/.config/lazygit
-if ! curl -fsSL -o /etc/skel/.config/lazygit/config.yml https://raw.githubusercontent.com/catppuccin/lazygit/main/themes/mocha/peach.yml; then
+if ! curl "${CURL_RETRY[@]}" -fsSL -o /etc/skel/.config/lazygit/config.yml https://raw.githubusercontent.com/catppuccin/lazygit/main/themes/mocha/peach.yml; then
   log "Failed to download lazygit Catppuccin theme - skipping"
 fi
 
 log "Installing Catppuccin theme for delta and wiring it as git's pager"
 mkdir -p /etc/skel/.config/git
-if curl -fsSL -o /etc/skel/.config/git/catppuccin.gitconfig https://raw.githubusercontent.com/catppuccin/delta/main/catppuccin.gitconfig; then
+if curl "${CURL_RETRY[@]}" -fsSL -o /etc/skel/.config/git/catppuccin.gitconfig https://raw.githubusercontent.com/catppuccin/delta/main/catppuccin.gitconfig; then
   cat > /etc/skel/.gitconfig <<'EOF'
 [include]
 	path = ~/.config/git/catppuccin.gitconfig
@@ -703,7 +717,7 @@ fi
 
 log "Installing Catppuccin theme for fzf"
 mkdir -p /etc/skel/.config/fzf
-if curl -fsSL -o /etc/skel/.config/fzf/catppuccin-mocha.sh https://raw.githubusercontent.com/catppuccin/fzf/main/themes/catppuccin-fzf-mocha.sh; then
+if curl "${CURL_RETRY[@]}" -fsSL -o /etc/skel/.config/fzf/catppuccin-mocha.sh https://raw.githubusercontent.com/catppuccin/fzf/main/themes/catppuccin-fzf-mocha.sh; then
   echo 'source ~/.config/fzf/catppuccin-mocha.sh' >> /etc/skel/.zshrc
 else
   log "Failed to download fzf Catppuccin theme - skipping"
@@ -724,7 +738,7 @@ fi
 
 log "Installing Catppuccin theme for superfile"
 mkdir -p /etc/skel/.config/superfile/theme
-if curl -fsSL -o /etc/skel/.config/superfile/theme/catppuccin-mocha-peach.toml https://raw.githubusercontent.com/catppuccin/superfile/main/themes/mocha/catppuccin-mocha-peach.toml; then
+if curl "${CURL_RETRY[@]}" -fsSL -o /etc/skel/.config/superfile/theme/catppuccin-mocha-peach.toml https://raw.githubusercontent.com/catppuccin/superfile/main/themes/mocha/catppuccin-mocha-peach.toml; then
   cat > /etc/skel/.config/superfile/config.toml <<'EOF'
 theme = "catppuccin-mocha-peach"
 EOF
@@ -734,7 +748,7 @@ fi
 
 log "Installing Catppuccin theme for zsh-syntax-highlighting"
 mkdir -p /etc/skel/.zsh
-if curl -fsSL -o /etc/skel/.zsh/catppuccin_mocha-zsh-syntax-highlighting.zsh https://raw.githubusercontent.com/catppuccin/zsh-syntax-highlighting/main/themes/catppuccin_mocha-zsh-syntax-highlighting.zsh; then
+if curl "${CURL_RETRY[@]}" -fsSL -o /etc/skel/.zsh/catppuccin_mocha-zsh-syntax-highlighting.zsh https://raw.githubusercontent.com/catppuccin/zsh-syntax-highlighting/main/themes/catppuccin_mocha-zsh-syntax-highlighting.zsh; then
   # Must be sourced before the zsh-syntax-highlighting plugin loads.
   sed -i '\#source \$ZSH/oh-my-zsh.sh#i source ~/.zsh/catppuccin_mocha-zsh-syntax-highlighting.zsh' /etc/skel/.zshrc
 else
