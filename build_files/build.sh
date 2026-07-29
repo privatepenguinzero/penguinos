@@ -65,7 +65,7 @@ CORE_PKGS=(
   qemu-kvm libvirt virt-install virt-manager gnome-boxes distrobox podman-compose
   seahorse qt6-qtwayland
   cargo
-  yq bind-utils rpm-build
+  yq bind-utils rpm-build chezmoi
   zsh zoxide fzf
   neovim ripgrep fd-find lazygit git-delta xclip wl-clipboard gcc gcc-c++ make
   nodejs npm
