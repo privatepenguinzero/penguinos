@@ -222,7 +222,13 @@ git clone --depth 1 https://github.com/zsh-users/zsh-syntax-highlighting.git "$Z
 unset GIT_TERMINAL_PROMPT GIT_ASKPASS
 sed -i 's/plugins=(git)/plugins=(dnf aliases genpass git zsh-autosuggestions zsh-autocomplete zsh-history-substring-search z zsh-syntax-highlighting)/' /etc/skel/.zshrc
 sed -i 's/ZSH_THEME="robbyrussell"/ZSH_THEME="jonathan"/' /etc/skel/.zshrc
-echo "eval \"$(zoxide init zsh --cmd cd)\"" >> /etc/skel/.zshrc
+# Single quotes on purpose: the command substitution has to reach .zshrc as
+# literal text and run when the shell starts. With double quotes bash expands
+# it here, during the build, and bakes zoxide's ~100 lines of init output into
+# the file wrapped in eval "..." - which then fails at every shell start with
+# `command not found: __zoxide_pwd`, `no match found`, and a parse error.
+# shellcheck disable=SC2016  # the non-expansion is the entire point
+echo 'eval "$(zoxide init zsh --cmd cd)"' >> /etc/skel/.zshrc
 
 # -------------------------------------------------------------------
 # LazyVim (Neovim distribution)
