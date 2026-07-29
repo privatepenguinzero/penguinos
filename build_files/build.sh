@@ -66,7 +66,7 @@ CORE_PKGS=(
   seahorse qt6-qtwayland
   cargo
   yq bind-utils rpm-build chezmoi
-  zsh zoxide fzf
+  zsh zoxide fzf starship
   neovim ripgrep fd-find lazygit git-delta xclip wl-clipboard gcc gcc-c++ make
   nodejs npm
   papirus-icon-theme
@@ -734,6 +734,36 @@ if curl "${CURL_RETRY[@]}" -fsSL -o /etc/skel/.config/fzf/catppuccin-mocha.sh ht
 else
   log "Failed to download fzf Catppuccin theme - skipping"
 fi
+
+log "Installing Catppuccin theme for starship"
+# Upstream ships the palette only, not a prompt layout. starship resolves the
+# standard colour names (green, red, ...) against the active palette, so this
+# recolours the default prompt without changing its format - which is the
+# point: the prompt keeps showing directory, git status and command duration
+# exactly as before, in Mocha colours.
+mkdir -p /etc/skel/.config
+STARSHIP_PALETTE="/tmp/starship-mocha.toml"
+if curl "${CURL_RETRY[@]}" -fsSL -o "$STARSHIP_PALETTE" https://raw.githubusercontent.com/catppuccin/starship/main/themes/mocha.toml; then
+  {
+    echo 'palette = "catppuccin_mocha"'
+    echo
+    cat "$STARSHIP_PALETTE"
+    # The palette defines Catppuccin's own colour names and overrides the
+    # standard ones it shares (red, green, yellow, blue...). It has no `cyan`
+    # or `purple`, which is what the default directory and git_branch styles
+    # ask for, so those two would stay plain ANSI while everything around them
+    # turned Mocha. Point them at the palette's nearest equivalents.
+    echo
+    echo '[directory]'
+    echo 'style = "bold blue"'
+    echo
+    echo '[git_branch]'
+    echo 'style = "bold mauve"'
+  } > /etc/skel/.config/starship.toml
+else
+  log "Failed to download starship Catppuccin palette - skipping"
+fi
+rm -f "$STARSHIP_PALETTE"
 
 log "Installing Catppuccin theme for mc (Midnight Commander)"
 mkdir -p /etc/skel/.local/share/mc/skins /etc/skel/.config/mc
