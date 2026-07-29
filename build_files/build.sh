@@ -256,9 +256,14 @@ fi
 # -------------------------------------------------------------------
 # RTK – Rust Token Killer (verified script download)
 # -------------------------------------------------------------------
+# The installer is a shell script executed as root, so it is pinned to a commit
+# rather than fetched from the master tip. Renovate watches the branch and opens
+# a PR when the SHA moves (the `_COMMIT` manager in .github/renovate.json5).
+# renovate: datasource=git-refs depName=https://github.com/rtk-ai/rtk branch=master
+RTK_INSTALLER_COMMIT="36591fb00d650bf987b57483c0b3a395a35a8dc1"
 log "Installing RTK"
 RTK_SCRIPT="/tmp/rtk-install.sh"
-curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh -o "$RTK_SCRIPT"
+curl -fsSL "https://raw.githubusercontent.com/rtk-ai/rtk/${RTK_INSTALLER_COMMIT}/install.sh" -o "$RTK_SCRIPT"
 if [[ ! -s "$RTK_SCRIPT" ]]; then
   log "RTK install script appears malformed – aborting"
   exit 1
@@ -279,6 +284,14 @@ fi
 # automatic but visible and revertible. It also removes the dependency on
 # api.github.com, whose unauthenticated 60 req/hr limit is shared across all
 # GitHub Actions runner NAT IPs and used to 403 at random.
+#
+# What is deliberately NOT pinned, and why: the Oh My Zsh / zsh-plugin clones,
+# the LazyVim starter, the google/fonts sparse checkout and the Catppuccin theme
+# files below all track their default branch. They are plugin frameworks and
+# colorscheme data whose whole point is to track upstream, none of them is
+# fetched as a privileged executable, and pinning seven more SHAs would cost
+# more churn than the drift is worth. Everything that lands in /usr/bin or runs
+# as root during the build IS pinned. Revisit that line, not the list.
 
 # -------------------------------------------------------------------
 # NetBird – pinned release download
@@ -286,14 +299,26 @@ fi
 # renovate: datasource=github-releases depName=netbirdio/netbird
 NETBIRD_VERSION="v0.75.0"
 log "Installing NetBird ${NETBIRD_VERSION}"
-NETBIRD_TAR="/tmp/netbird.tar.gz"
-if ! curl -fSL -o "$NETBIRD_TAR" "https://github.com/netbirdio/netbird/releases/download/${NETBIRD_VERSION}/netbird_${NETBIRD_VERSION#v}_linux_amd64.tar.gz"; then
+# Downloaded under its upstream asset name so the published checksum line, which
+# is keyed by filename, can be fed straight to `sha256sum -c`.
+NETBIRD_ASSET="netbird_${NETBIRD_VERSION#v}_linux_amd64.tar.gz"
+NETBIRD_TAR="/tmp/${NETBIRD_ASSET}"
+if ! curl -fSL -o "$NETBIRD_TAR" "https://github.com/netbirdio/netbird/releases/download/${NETBIRD_VERSION}/${NETBIRD_ASSET}"; then
   log "Failed to download NetBird"
+  exit 1
+fi
+NETBIRD_CHECKSUMS="/tmp/netbird-checksums.txt"
+if ! curl -fsSL -o "$NETBIRD_CHECKSUMS" "https://github.com/netbirdio/netbird/releases/download/${NETBIRD_VERSION}/netbird_${NETBIRD_VERSION#v}_checksums.txt"; then
+  log "Failed to download NetBird checksums"
+  exit 1
+fi
+if ! (cd /tmp && grep " ${NETBIRD_ASSET}$" "$NETBIRD_CHECKSUMS" | sha256sum -c -); then
+  log "NetBird checksum verification failed"
   exit 1
 fi
 tar -xzf "$NETBIRD_TAR" -C /usr/bin/ netbird
 chmod +x /usr/bin/netbird
-rm -f "$NETBIRD_TAR"
+rm -f "$NETBIRD_TAR" "$NETBIRD_CHECKSUMS"
 
 # -------------------------------------------------------------------
 # Superfile – terminal file manager (verified release download)
@@ -308,13 +333,16 @@ if ! curl -fSL -o "$SUPERFILE_TAR" "https://github.com/yorukot/superfile/release
   exit 1
 fi
 SUPERFILE_CHECKSUMS="/tmp/superfile-checksums.txt"
-if curl -fsSL -o "$SUPERFILE_CHECKSUMS" "https://github.com/yorukot/superfile/releases/download/${SUPERFILE_VERSION}/superfile-${SUPERFILE_VERSION}-checksums.txt"; then
-  if ! (cd /tmp && grep "$SUPERFILE_ASSET" "$SUPERFILE_CHECKSUMS" | sha256sum -c -); then
-    log "Superfile checksum verification failed"
-    exit 1
-  fi
-else
-  log "Failed to download Superfile checksums - continuing without verification"
+# A missing checksum file is treated as a hard failure, not a warning: anyone
+# able to swap the tarball can drop the manifest too, so skipping verification
+# on a 404 would defeat the check it is meant to enforce.
+if ! curl -fsSL -o "$SUPERFILE_CHECKSUMS" "https://github.com/yorukot/superfile/releases/download/${SUPERFILE_VERSION}/superfile-${SUPERFILE_VERSION}-checksums.txt"; then
+  log "Failed to download Superfile checksums"
+  exit 1
+fi
+if ! (cd /tmp && grep " ${SUPERFILE_ASSET}$" "$SUPERFILE_CHECKSUMS" | sha256sum -c -); then
+  log "Superfile checksum verification failed"
+  exit 1
 fi
 SUPERFILE_EXTRACT_DIR="/tmp/superfile-extract"
 mkdir -p "$SUPERFILE_EXTRACT_DIR"
@@ -394,6 +422,17 @@ NERDFONT_VERSION="v3.4.0"
 log "Installing JetBrainsMono Nerd Font ${NERDFONT_VERSION}"
 JBZIP="/tmp/JetBrainsMono.zip"
 if curl -fSL -o "$JBZIP" "https://github.com/ryanoasis/nerd-fonts/releases/download/${NERDFONT_VERSION}/JetBrainsMono.zip"; then
+  # Upstream publishes one SHA-256.txt covering every font archive in the release.
+  NERDFONT_CHECKSUMS="/tmp/nerd-fonts-SHA-256.txt"
+  if ! curl -fsSL -o "$NERDFONT_CHECKSUMS" "https://github.com/ryanoasis/nerd-fonts/releases/download/${NERDFONT_VERSION}/SHA-256.txt"; then
+    log "Failed to download JetBrainsMono Nerd Font checksums"
+    exit 1
+  fi
+  if ! (cd /tmp && grep " JetBrainsMono.zip$" "$NERDFONT_CHECKSUMS" | sha256sum -c -); then
+    log "JetBrainsMono Nerd Font checksum verification failed"
+    exit 1
+  fi
+  rm -f "$NERDFONT_CHECKSUMS"
   mkdir -p /usr/share/fonts/JetBrainsMonoNerdFont
   unzip -q -j -o "$JBZIP" \
     'JetBrainsMonoNerdFont-Regular.ttf' \
@@ -479,15 +518,7 @@ fi
 # GreetD + DMS (display manager) configuration
 # -------------------------------------------------------------------
 log "Configuring greetd and DMS"
-mkdir -p /etc/greetd
-cat > /etc/greetd/config.toml <<'EOF'
-[terminal]
-vt = 1
-
-[default_session]
-user = "greeter"
-command = "dms-greeter --command niri"
-EOF
+install -D -m 0644 /ctx/system_files/etc/greetd/config.toml /etc/greetd/config.toml
 # Disable GDM if present
 systemctl disable gdm.service 2>/dev/null || true
 # Set greetd as the display manager
@@ -518,22 +549,34 @@ cp -rf /ctx/dot_config/DankMaterialShell/settings.json /etc/skel/.config/DankMat
 # Kvantum ports are skipped: gtk was archived upstream (now requires a
 # separate Python build tool, not a drop-in theme) and Kvantum has no real
 # footprint here (this image has no Kvantum-themed Qt apps installed).
-log "Installing Catppuccin cursors"
+# renovate: datasource=github-releases depName=catppuccin/cursors
+CURSORS_VERSION="v2.0.0"
+log "Installing Catppuccin cursors ${CURSORS_VERSION}"
 CURSORS_ZIP="/tmp/catppuccin-cursors.zip"
-if curl -fSL -o "$CURSORS_ZIP" https://github.com/catppuccin/cursors/releases/latest/download/catppuccin-mocha-peach-cursors.zip; then
+if curl -fSL -o "$CURSORS_ZIP" "https://github.com/catppuccin/cursors/releases/download/${CURSORS_VERSION}/catppuccin-mocha-peach-cursors.zip"; then
   unzip -q -o "$CURSORS_ZIP" -d /usr/share/icons
   rm -f "$CURSORS_ZIP"
 else
   log "Failed to download Catppuccin cursors - skipping"
 fi
 
+# renovate: datasource=github-releases depName=PapirusDevelopmentTeam/papirus-folders
+PAPIRUS_FOLDERS_VERSION="v1.14.0"
 log "Recoloring Papirus folders to Catppuccin Mocha/Peach"
 PAPIRUS_FOLDERS_SRC="/tmp/papirus-folders-src"
 if git clone --depth 1 https://github.com/catppuccin/papirus-folders.git "$PAPIRUS_FOLDERS_SRC"; then
   cp -rf "$PAPIRUS_FOLDERS_SRC"/src/* /usr/share/icons/Papirus/
   rm -rf "$PAPIRUS_FOLDERS_SRC"
-  if curl -fsSL -o /usr/bin/papirus-folders https://raw.githubusercontent.com/PapirusDevelopmentTeam/papirus-folders/master/papirus-folders; then
+  # This script ships in the image and runs as root here, so it is pinned to a
+  # release tag rather than the master tip. Upstream publishes no checksum
+  # alongside it, so it is verified by executing it after install - the same
+  # approach used for Herdr above.
+  if curl -fsSL -o /usr/bin/papirus-folders "https://raw.githubusercontent.com/PapirusDevelopmentTeam/papirus-folders/${PAPIRUS_FOLDERS_VERSION}/papirus-folders"; then
     chmod +x /usr/bin/papirus-folders
+    if ! /usr/bin/papirus-folders --version; then
+      log "papirus-folders is not runnable after install - aborting"
+      exit 1
+    fi
     /usr/bin/papirus-folders -C cat-mocha-peach --theme Papirus-Dark
   else
     log "Failed to download papirus-folders script - skipping recolor"
@@ -683,14 +726,9 @@ else
   log "Failed to download zsh-syntax-highlighting Catppuccin theme - skipping"
 fi
 
-# DMS's Go backend needs raw access to /dev/input/* (evdev) to detect clicks
-# on its own bar/panels; without it, hover works but clicks silently no-op.
-# Grant it via udev uaccess instead of requiring manual `usermod -aG input`,
-# since users aren't created at image-build time.
-mkdir -p /usr/lib/udev/rules.d
-cat > /usr/lib/udev/rules.d/91-dms-input-uaccess.rules <<'EOF'
-SUBSYSTEM=="input", TAG+="uaccess"
-EOF
+# Raw evdev access for DMS - see the rule file itself for why.
+install -D -m 0644 /ctx/system_files/usr/lib/udev/rules.d/91-dms-input-uaccess.rules \
+    /usr/lib/udev/rules.d/91-dms-input-uaccess.rules
 
 # -------------------------------------------------------------------
 # SELinux context restoration (after all custom files are in place)

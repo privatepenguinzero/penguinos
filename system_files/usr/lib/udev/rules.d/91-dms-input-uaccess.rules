@@ -1,0 +1,5 @@
+# DMS's Go backend needs raw access to /dev/input/* (evdev) to detect clicks on
+# its own bar/panels; without it, hover works but clicks silently no-op. Granted
+# via uaccess rather than `usermod -aG input` because no users exist at
+# image-build time.
+SUBSYSTEM=="input", TAG+="uaccess"

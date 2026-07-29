@@ -20,6 +20,17 @@
         "#\\s*renovate:\\s*datasource=(?<datasource>[a-z-]+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*[A-Z0-9_]+_VERSION=\"(?<currentValue>[^\"]+)\"",
       ],
     },
+    {
+      // Same idea for upstreams that publish no releases, where the only thing
+      // to pin is a commit. Matches a `# renovate: ... branch=<name>` comment
+      // above a FOO_COMMIT="<40-hex-sha>" assignment; Renovate tracks the named
+      // branch and opens a PR when its SHA moves.
+      "customType": "regex",
+      "managerFilePatterns": ["/^build_files/build\\.sh$/"],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>[a-z-]+)\\s+depName=(?<depName>\\S+)\\s+branch=(?<currentValue>\\S+)\\s*\\n\\s*[A-Z0-9_]+_COMMIT=\"(?<currentDigest>[0-9a-f]{40})\"",
+      ],
+    },
   ],
 
   "packageRules": [
