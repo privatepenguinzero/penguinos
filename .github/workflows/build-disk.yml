@@ -113,6 +113,15 @@ jobs:
           sudo podman version --format 'podman {{.Client.Version}}'
           sudo podman info --format 'runtime: {{.Host.OCIRuntime.Path}} {{.Host.OCIRuntime.Version}}' | head -n1
 
+          # Warn when this step is obsolete - see build.yml for the reasoning.
+          stale=""
+          if [[ -x /usr/bin/crun ]]; then
+            stale=$(/usr/bin/crun --version 2>/dev/null | head -n1 | awk '{print $3}')
+          fi
+          if [[ -z "${stale}" ]] || [[ "$(printf '%s\n1.14.3\n' "${stale}" | sort -V | head -n1)" == "1.14.3" ]]; then
+            echo "::warning::/usr/bin/crun is ${stale:-absent}, so nothing shadows podman's runtime any more - this step can be deleted."
+          fi
+
       - name: Build disk images
         id: build
         uses: osbuild/bootc-image-builder-action@30960621b85c9e76c653082f9ef4cab5a10210d5 # main

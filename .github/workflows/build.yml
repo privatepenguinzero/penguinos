@@ -137,6 +137,19 @@ jobs:
           sudo podman version --format 'podman {{.Client.Version}}'
           sudo podman info --format 'runtime: {{.Host.OCIRuntime.Path}} {{.Host.OCIRuntime.Version}}' | head -n1
 
+          # Say so when this step has outlived its purpose, rather than leaving it
+          # to rot. It exists only because /usr/bin/crun shadows the bundled runtime
+          # *and* predates 1.14.3, where the OCI version check was dropped. Once
+          # that stops being true the step is dead weight and should be deleted.
+          # A warning, not a failure: an obsolete workaround is untidy, not broken.
+          stale=""
+          if [[ -x /usr/bin/crun ]]; then
+            stale=$(/usr/bin/crun --version 2>/dev/null | head -n1 | awk '{print $3}')
+          fi
+          if [[ -z "${stale}" ]] || [[ "$(printf '%s\n1.14.3\n' "${stale}" | sort -V | head -n1)" == "1.14.3" ]]; then
+            echo "::warning::/usr/bin/crun is ${stale:-absent}, so nothing shadows podman's runtime any more - this step can be deleted."
+          fi
+
       # This actually builds the container image
       - name: Build Image
         id: build-image
