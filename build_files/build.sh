@@ -67,7 +67,7 @@ CORE_PKGS=(
   cargo
   yq bind-utils rpm-build chezmoi
   zsh zoxide fzf starship
-  neovim ripgrep fd-find lazygit git-delta xclip wl-clipboard gcc gcc-c++ make
+  neovim ripgrep fd-find lazygit git-delta gitleaks xclip wl-clipboard gcc gcc-c++ make
   nodejs npm
   papirus-icon-theme
   greetd
