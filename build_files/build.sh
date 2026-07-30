@@ -412,6 +412,44 @@ if ! /usr/bin/herdr completion zsh > /usr/share/zsh/site-functions/_herdr; then
 fi
 
 # -------------------------------------------------------------------
+# Proton Pass CLI – secret retrieval, incl. chezmoi's protonPass templates
+# -------------------------------------------------------------------
+# Not packaged in Fedora/Terra/RPM Fusion, so this is a release download.
+# Upstream ships one statically linked binary per platform *plus* a matching
+# .sha256, so unlike Herdr it is hash-verified rather than exercised.
+# Note the tag carries no leading "v" (2.2.3, not v2.2.3) - unlike every other
+# pin in this file - so PASS_CLI_VERSION is used bare in the download URL.
+# renovate: datasource=github-releases depName=protonpass/pass-cli
+PASS_CLI_VERSION="2.2.3"
+log "Installing Proton Pass CLI ${PASS_CLI_VERSION}"
+PASS_CLI_ASSET="pass-cli-linux-x86_64"
+PASS_CLI_DOWNLOAD="/tmp/${PASS_CLI_ASSET}"
+PASS_CLI_BASE_URL="https://github.com/protonpass/pass-cli/releases/download/${PASS_CLI_VERSION}"
+if ! curl "${CURL_RETRY[@]}" -fSL -o "$PASS_CLI_DOWNLOAD" "${PASS_CLI_BASE_URL}/${PASS_CLI_ASSET}"; then
+  log "Failed to download Proton Pass CLI"
+  exit 1
+fi
+# As with Superfile, a missing checksum file is a hard failure rather than a
+# skipped check. This one already names its asset in `sha256sum -c` format, so
+# it is fed in whole instead of grepped out of a combined manifest.
+PASS_CLI_CHECKSUM="/tmp/${PASS_CLI_ASSET}.sha256"
+if ! curl "${CURL_RETRY[@]}" -fsSL -o "$PASS_CLI_CHECKSUM" "${PASS_CLI_BASE_URL}/${PASS_CLI_ASSET}.sha256"; then
+  log "Failed to download Proton Pass CLI checksum"
+  exit 1
+fi
+if ! (cd /tmp && sha256sum -c "$PASS_CLI_CHECKSUM"); then
+  log "Proton Pass CLI checksum verification failed"
+  exit 1
+fi
+install -m 0755 "$PASS_CLI_DOWNLOAD" /usr/bin/pass-cli
+rm -f "$PASS_CLI_DOWNLOAD" "$PASS_CLI_CHECKSUM"
+# Subcommand is "completions" (plural), unlike Herdr's "completion".
+if ! /usr/bin/pass-cli completions zsh > /usr/share/zsh/site-functions/_pass-cli; then
+  log "Failed to generate Proton Pass CLI zsh completions - skipping"
+  rm -f /usr/share/zsh/site-functions/_pass-cli
+fi
+
+# -------------------------------------------------------------------
 # Google Fonts – curated subset, from the Fedora repositories
 # -------------------------------------------------------------------
 # These used to come from a blobless sparse checkout of google/fonts. Fedora
