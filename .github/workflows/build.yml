@@ -99,33 +99,43 @@ jobs:
       # containers.conf.d is the same drop-in mechanism the runner image itself uses
       # for its netavark firewall workaround, so this adds a file instead of editing
       # one. Drop this step once the runner stops leaving a stale crun in /usr/bin.
+      #
+      # The rollout is gradual, so a run still lands on either image. Only the newer
+      # one has a bundled crun to point at; on the older one apt's podman 4.9.3 is
+      # paired with a crun that accepts it and there is nothing to fix. So this is a
+      # no-op there rather than an error - the earlier version asserted the bundle
+      # was present, which failed the build on precisely the runners that were fine.
       - name: Point podman at the crun that shipped with it
         run: |
           set -euo pipefail
 
           CRUN=/usr/local/bin/crun
-          if [[ ! -x "${CRUN}" ]]; then
-            echo "::error::${CRUN} is missing - the runner image no longer bundles crun with podman."
-            exit 1
+          if [[ -x "${CRUN}" ]]; then
+            sudo mkdir -p /etc/containers/containers.conf.d
+            printf '%s\n' \
+              '[engine]' \
+              'runtime = "crun"' \
+              '' \
+              '[engine.runtimes]' \
+              "crun = [\"${CRUN}\"]" \
+              | sudo tee /etc/containers/containers.conf.d/99-crun-path.conf
+
+            # Assert the drop-in took effect - not that it was needed. Failing here
+            # costs seconds; the alternative is the opaque crun error ninety seconds
+            # into the build.
+            resolved=$(sudo podman info --format '{{.Host.OCIRuntime.Path}}')
+            if [[ "${resolved}" != "${CRUN}" ]]; then
+              echo "::error::podman still resolves crun to ${resolved}, expected ${CRUN}."
+              exit 1
+            fi
+          else
+            echo "No bundled crun at ${CRUN}; leaving podman's runtime resolution alone."
           fi
 
-          sudo mkdir -p /etc/containers/containers.conf.d
-          printf '%s\n' \
-            '[engine]' \
-            'runtime = "crun"' \
-            '' \
-            '[engine.runtimes]' \
-            "crun = [\"${CRUN}\"]" \
-            | sudo tee /etc/containers/containers.conf.d/99-crun-path.conf
-
-          # Assert it took effect here, in seconds, rather than ninety seconds into
-          # the image build with an error that says nothing about the cause.
-          resolved=$(sudo podman info --format '{{.Host.OCIRuntime.Path}}')
-          echo "podman runtime: ${resolved} - $(sudo podman info --format '{{.Host.OCIRuntime.Version}}' | head -n1)"
-          if [[ "${resolved}" != "${CRUN}" ]]; then
-            echo "::error::podman still resolves crun to ${resolved}, expected ${CRUN}."
-            exit 1
-          fi
+          # Log both versions either way, so a future mismatch is diagnosable from
+          # the log without having to reproduce it.
+          sudo podman version --format 'podman {{.Client.Version}}'
+          sudo podman info --format 'runtime: {{.Host.OCIRuntime.Path}} {{.Host.OCIRuntime.Version}}' | head -n1
 
       # This actually builds the container image
       - name: Build Image

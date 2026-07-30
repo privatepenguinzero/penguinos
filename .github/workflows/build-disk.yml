@@ -91,26 +91,27 @@ jobs:
           set -euo pipefail
 
           CRUN=/usr/local/bin/crun
-          if [[ ! -x "${CRUN}" ]]; then
-            echo "::error::${CRUN} is missing - the runner image no longer bundles crun with podman."
-            exit 1
+          if [[ -x "${CRUN}" ]]; then
+            sudo mkdir -p /etc/containers/containers.conf.d
+            printf '%s\n' \
+              '[engine]' \
+              'runtime = "crun"' \
+              '' \
+              '[engine.runtimes]' \
+              "crun = [\"${CRUN}\"]" \
+              | sudo tee /etc/containers/containers.conf.d/99-crun-path.conf
+
+            resolved=$(sudo podman info --format '{{.Host.OCIRuntime.Path}}')
+            if [[ "${resolved}" != "${CRUN}" ]]; then
+              echo "::error::podman still resolves crun to ${resolved}, expected ${CRUN}."
+              exit 1
+            fi
+          else
+            echo "No bundled crun at ${CRUN}; leaving podman's runtime resolution alone."
           fi
 
-          sudo mkdir -p /etc/containers/containers.conf.d
-          printf '%s\n' \
-            '[engine]' \
-            'runtime = "crun"' \
-            '' \
-            '[engine.runtimes]' \
-            "crun = [\"${CRUN}\"]" \
-            | sudo tee /etc/containers/containers.conf.d/99-crun-path.conf
-
-          resolved=$(sudo podman info --format '{{.Host.OCIRuntime.Path}}')
-          echo "podman runtime: ${resolved} - $(sudo podman info --format '{{.Host.OCIRuntime.Version}}' | head -n1)"
-          if [[ "${resolved}" != "${CRUN}" ]]; then
-            echo "::error::podman still resolves crun to ${resolved}, expected ${CRUN}."
-            exit 1
-          fi
+          sudo podman version --format 'podman {{.Client.Version}}'
+          sudo podman info --format 'runtime: {{.Host.OCIRuntime.Path}} {{.Host.OCIRuntime.Version}}' | head -n1
 
       - name: Build disk images
         id: build
