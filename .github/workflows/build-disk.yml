@@ -77,6 +77,38 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      # bootc-image-builder-action shells out to `podman run --privileged`, so the
+      # amd64 runner hits the same stale-crun problem as build.yml - see the long
+      # comment on its "Point podman at the crun that shipped with it" step. Skipped
+      # on arm64, which still gets podman 4.9.3 from apt above and so is unaffected
+      # (and has no bundled crun to point at).
+      - name: Point podman at the crun that shipped with it
+        if: inputs.platform != 'arm64'
+        run: |
+          set -euo pipefail
+
+          CRUN=/usr/local/bin/crun
+          if [[ ! -x "${CRUN}" ]]; then
+            echo "::error::${CRUN} is missing - the runner image no longer bundles crun with podman."
+            exit 1
+          fi
+
+          sudo mkdir -p /etc/containers/containers.conf.d
+          printf '%s\n' \
+            '[engine]' \
+            'runtime = "crun"' \
+            '' \
+            '[engine.runtimes]' \
+            "crun = [\"${CRUN}\"]" \
+            | sudo tee /etc/containers/containers.conf.d/99-crun-path.conf
+
+          resolved=$(sudo podman info --format '{{.Host.OCIRuntime.Path}}')
+          echo "podman runtime: ${resolved} - $(sudo podman info --format '{{.Host.OCIRuntime.Version}}' | head -n1)"
+          if [[ "${resolved}" != "${CRUN}" ]]; then
+            echo "::error::podman still resolves crun to ${resolved}, expected ${CRUN}."
+            exit 1
+          fi
+
       - name: Build disk images
         id: build
         uses: osbuild/bootc-image-builder-action@30960621b85c9e76c653082f9ef4cab5a10210d5 # main

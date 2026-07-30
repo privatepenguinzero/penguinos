@@ -87,6 +87,46 @@ jobs:
           echo "IMAGE_REGISTRY=${IMAGE_REGISTRY,,}" >> ${GITHUB_ENV}
           echo "IMAGE_NAME=${IMAGE_NAME,,}" >> ${GITHUB_ENV}
 
+      # Runner image ubuntu24/20260726.254 replaced apt's podman 4.9.3 with the
+      # podman-static 5.8.4 bundle under /usr/local/bin. That bundle carries its own
+      # current crun, but `apt-get install buildah` still pulls Ubuntu noble's crun
+      # 1.14.1 into /usr/bin, and podman's default search order tries /usr/bin/crun
+      # first. Podman 5 writes `ociVersion: 1.2.x` into the runtime config, while
+      # crun only stopped rejecting anything outside 1.0.x in 1.14.3
+      # (containers/crun@0860c0ff), so every RUN step died with the unhelpful
+      # "unknown version specified".
+      #
+      # containers.conf.d is the same drop-in mechanism the runner image itself uses
+      # for its netavark firewall workaround, so this adds a file instead of editing
+      # one. Drop this step once the runner stops leaving a stale crun in /usr/bin.
+      - name: Point podman at the crun that shipped with it
+        run: |
+          set -euo pipefail
+
+          CRUN=/usr/local/bin/crun
+          if [[ ! -x "${CRUN}" ]]; then
+            echo "::error::${CRUN} is missing - the runner image no longer bundles crun with podman."
+            exit 1
+          fi
+
+          sudo mkdir -p /etc/containers/containers.conf.d
+          printf '%s\n' \
+            '[engine]' \
+            'runtime = "crun"' \
+            '' \
+            '[engine.runtimes]' \
+            "crun = [\"${CRUN}\"]" \
+            | sudo tee /etc/containers/containers.conf.d/99-crun-path.conf
+
+          # Assert it took effect here, in seconds, rather than ninety seconds into
+          # the image build with an error that says nothing about the cause.
+          resolved=$(sudo podman info --format '{{.Host.OCIRuntime.Path}}')
+          echo "podman runtime: ${resolved} - $(sudo podman info --format '{{.Host.OCIRuntime.Version}}' | head -n1)"
+          if [[ "${resolved}" != "${CRUN}" ]]; then
+            echo "::error::podman still resolves crun to ${resolved}, expected ${CRUN}."
+            exit 1
+          fi
+
       # This actually builds the container image
       - name: Build Image
         id: build-image
