@@ -185,6 +185,30 @@ fi
 log "Installing Niri"
 dnf5 -y install niri niri-settings --exclude=alacritty
 
+# systemd 259 deprecated `systemctl --user import-environment` with no argument
+# list, and niri-session still calls it that way (niri 26.04, and upstream main
+# as of 2026-07-31). greetd starts niri-session on the VT, so the deprecation
+# notice flashes on screen at every login, right before the compositor takes
+# over. Cosmetic, but it is the first thing the machine says to you.
+#
+# Naming the variables imports exactly the same set - the bare form imports the
+# caller's whole environment - so this changes the wording, not the session. The
+# awk incantation is niri-session's own, lifted from the dinit branch further
+# down the same file: gawk puts AWKPATH/AWKLIBPATH in ENVIRON even when they are
+# not in the environment, and naming an unset variable would only trade the
+# deprecation notice for an "environment variable not set, ignoring" one.
+#
+# Guarded so that the day upstream fixes this (or reshapes the script), the
+# build says so instead of silently patching nothing.
+if grep -qxF '    systemctl --user import-environment' /usr/bin/niri-session; then
+  log "Naming the variables in niri-session's import-environment call"
+  sed -i -f - /usr/bin/niri-session <<'EOF'
+s@^\(    systemctl --user import-environment\)$@\1 $(awk 'BEGIN{for (v in ENVIRON) if (v !~ /^AWK(PATH|LIBPATH)$/) print v}')@
+EOF
+else
+  log "niri-session no longer calls import-environment bare - this patch can go"
+fi
+
 # -------------------------------------------------------------------
 # Cursor editor – download with checksum verification via dnf
 # -------------------------------------------------------------------
