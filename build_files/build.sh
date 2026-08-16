@@ -518,6 +518,52 @@ if ! /usr/bin/pass-cli completions zsh > /usr/share/zsh/site-functions/_pass-cli
 fi
 
 # -------------------------------------------------------------------
+# pay-respects – corrects the previous mistyped command
+# -------------------------------------------------------------------
+# This provides the `fuck` command, but it is deliberately *not* thefuck.
+# Fedora 44 does package thefuck (3.32-20.fc44) and it is dead on arrival:
+# upstream stopped releasing in 2022 and still does
+# `from distutils.spawn import find_executable`, while F44 ships Python 3.14 and
+# distutils was removed in 3.12. It installs cleanly, then every invocation -
+# `--version` included - ends in ModuleNotFoundError. A tool that is present in
+# the image but can never run is worse than no tool, so it is not installed.
+#
+# pay-respects is the maintained Rust replacement for the same job. Upstream
+# builds a real x86_64 RPM, so dnf resolves its dependencies, but publishes no
+# checksum file beside it - so, exactly like Herdr above, the artifact is
+# verified by executing it after install rather than by hash.
+# renovate: datasource=github-releases depName=iffse/pay-respects
+PAY_RESPECTS_VERSION="v0.8.8"
+log "Installing pay-respects ${PAY_RESPECTS_VERSION}"
+# The git tag carries a leading "v" but the RPM filename does not, hence the
+# ${var#v} strip.
+PAY_RESPECTS_RPM="pay-respects-${PAY_RESPECTS_VERSION#v}-1.x86_64.rpm"
+PAY_RESPECTS_DOWNLOAD="/tmp/${PAY_RESPECTS_RPM}"
+if ! curl "${CURL_RETRY[@]}" -fSL -o "$PAY_RESPECTS_DOWNLOAD" \
+    "https://github.com/iffse/pay-respects/releases/download/${PAY_RESPECTS_VERSION}/${PAY_RESPECTS_RPM}"; then
+  log "Failed to download pay-respects"
+  exit 1
+fi
+# --nogpgcheck: this is a GitHub release asset, not a package from a signed repo.
+if ! dnf5 -y install --nogpgcheck "$PAY_RESPECTS_DOWNLOAD"; then
+  log "Failed to install pay-respects"
+  exit 1
+fi
+rm -f "$PAY_RESPECTS_DOWNLOAD"
+if ! pay-respects --version; then
+  log "pay-respects binary is not runnable after install"
+  exit 1
+fi
+# Both alias names on purpose: `fuck` is the muscle memory being replaced, `f`
+# is the short form. Single quotes so the command substitution reaches .zshrc
+# literally instead of being frozen at build time - same reasoning as the
+# zoxide and starship lines above. `alias f=fuck` resolves because zsh
+# re-expands an alias whose expansion is itself an alias.
+# shellcheck disable=SC2016  # must reach .zshrc literally, like the zoxide line
+echo 'eval "$(pay-respects zsh --alias fuck)"' >> /etc/skel/.zshrc
+echo 'alias f=fuck' >> /etc/skel/.zshrc
+
+# -------------------------------------------------------------------
 # Google Fonts – curated subset, from the Fedora repositories
 # -------------------------------------------------------------------
 # These used to come from a blobless sparse checkout of google/fonts. Fedora
