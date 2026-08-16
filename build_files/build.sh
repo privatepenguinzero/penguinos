@@ -962,6 +962,43 @@ else
   log "Failed to download zsh-syntax-highlighting Catppuccin theme - skipping"
 fi
 
+# -------------------------------------------------------------------
+# Espanso – text expander (Wayland build, from COPR)
+# -------------------------------------------------------------------
+# Upstream publishes no RPM at all: the v2.4.0 assets are two Debian .debs, a
+# macOS .dmg, two Windows builds, and an AppImage that is X11-only. This image
+# runs niri, so the AppImage is wrong twice over, and unpacking a Debian
+# package onto Fedora is not something to ship in a bootc image.
+#
+# chuang/espanso-wayland is the Wayland variant, built for fedora-44-x86_64 and
+# tracking upstream exactly (2.4.0). The other two COPRs were rejected:
+# eclipseo/espanso is stuck on 2.2.7 (Oct 2025), and the last espanso-wayland
+# build in nklsdev/espanso failed outright.
+log "Enabling chuang/espanso-wayland COPR repository"
+if ! dnf5 -y copr enable chuang/espanso-wayland; then
+  log "Failed to enable chuang/espanso-wayland COPR repository"
+  exit 1
+fi
+log "Installing espanso"
+if ! install_pkg_chunk espanso; then
+  log "Failed to install espanso"
+  exit 1
+fi
+# As with Ghostty: install_pkg_chunk skips unavailable packages, so confirm the
+# binary is actually there.
+if ! command -v espanso >/dev/null 2>&1; then
+  log "espanso reported as installed but the binary is missing"
+  exit 1
+fi
+# espanso.service is a *user* unit and seeds ~/.config/espanso from
+# /usr/share/espanso/skel on first start, so there is no /etc/skel config to
+# ship here. `--global` enables it for every user who logs in, which is the
+# image-build equivalent of each user running `espanso service register`.
+systemctl --global enable espanso.service || log "Failed to enable espanso.service"
+# Keystroke detection on Wayland reads evdev directly. The DMS rule installed
+# right below already grants uaccess on /dev/input/*, so espanso needs no rule
+# of its own and no `usermod -aG input`.
+
 # Raw evdev access for DMS - see the rule file itself for why.
 install -D -m 0644 /ctx/system_files/usr/lib/udev/rules.d/91-dms-input-uaccess.rules \
     /usr/lib/udev/rules.d/91-dms-input-uaccess.rules
@@ -976,6 +1013,7 @@ restorecon -Rv /etc/greetd \
     /etc/skel/.zsh \
     /etc/skel/.local \
     /usr/lib/systemd/user/dms.service \
+    /etc/systemd/user \
     /usr/lib/udev/rules.d/91-dms-input-uaccess.rules \
     /usr/bin/rtk \
     /usr/bin/papirus-folders \
