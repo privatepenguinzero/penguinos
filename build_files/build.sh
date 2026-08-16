@@ -118,6 +118,31 @@ if ! dnf5 config-manager setopt terra.enabled=1 2>/dev/null; then
   dnf5 -y install --nogpgcheck --repofrompath "terra,https://repos.fyralabs.com/terra\$releasever" terra-release || log "Failed to enable Terra repo"
 fi
 
+# Pin Terra to its origin baseurl instead of the metalink it ships with.
+#
+# terra-release writes a repo file whose baseurl line is commented out in favour
+# of metalink=https://tetsudou.fyralabs.com/metalink?repo=terra$releasever...
+# The metalink publishes the expected sha512 of repomd.xml, and it is routinely
+# out of step with what the mirrors actually serve. That is what killed run
+# 31879386408: every mirror's repomd.xml was rejected against the metalink's
+# expectation, dnf reported "Usable URL not found", and `ghostty` - which only
+# exists in Terra - resolved to nothing.
+#
+# It is not a transient resync. A local rebuild on 2026-08-15 reproduced it with
+# a different expected hash (1a334b24... vs the run's e8c82ef5...) that no
+# mirror served, including Terra's own origin, and three retries with
+# `clean metadata && makecache` between them failed identically. Going straight
+# to the origin removes the metalink as a second, disagreeing source of truth.
+#
+# This does not weaken verification: gpgcheck and repo_gpgcheck stay at 1, so
+# repomd.xml is still checked against its detached signature, which is the
+# stronger guarantee. The cost is losing mirror failover, which was returning
+# nothing but unusable URLs anyway.
+if ! dnf5 config-manager setopt terra.baseurl="https://repos.fyralabs.com/terra\$releasever" terra.metalink=""; then
+  log "Failed to pin Terra to its origin baseurl"
+  exit 1
+fi
+
 # -------------------------------------------------------------------
 # RPM Fusion repositories and multimedia codecs
 # -------------------------------------------------------------------
@@ -152,7 +177,26 @@ fi
 # Ghostty configuration (system‑wide skeleton)
 # -------------------------------------------------------------------
 log "Installing Ghostty"
-dnf5 -y install ghostty
+# Ghostty comes from Terra, and run 31879386408 died on exactly this line with
+# "Usable URL not found" - see the Terra section above for the metalink problem
+# that caused it and how it is now avoided.
+#
+# install_pkg_chunk is deliberately NOT used here. It passes --skip-unavailable,
+# so a package that resolves to nothing makes dnf exit 0 and the retry loop
+# never runs; the build would then continue happily without a terminal. A plain
+# install plus an explicit binary check is both simpler and stricter. Retrying
+# would not have helped that run either: with the metalink broken, three
+# attempts with `clean metadata && makecache` in between all failed identically.
+if ! dnf5 -y install ghostty; then
+  log "Failed to install Ghostty"
+  exit 1
+fi
+# Ghostty is the default terminal, so confirm the binary really landed instead
+# of trusting the transaction's exit status.
+if ! command -v ghostty >/dev/null 2>&1; then
+  log "Ghostty reported as installed but the binary is missing"
+  exit 1
+fi
 mkdir -p /etc/skel/.config/ghostty
 cp -rf /ctx/dot_config/ghostty/config /etc/skel/.config/ghostty/
 
