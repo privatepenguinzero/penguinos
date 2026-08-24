@@ -17,10 +17,17 @@ log() {
 #
 # --retry-all-errors is the part that matters. Plain --retry only covers
 # transient HTTP responses (5xx, 408, 429) and timeouts; connection resets and
-# TLS handshake failures need this flag as well. Cost of a genuinely dead URL
-# is three extra attempts, roughly six seconds, which is far cheaper than
-# losing a nightly image.
-CURL_RETRY=(--retry 3 --retry-delay 2 --retry-all-errors)
+# TLS handshake failures need this flag as well.
+#
+# No --retry-delay: passing one pins the wait to a flat interval and *disables*
+# curl's exponential backoff. The old (--retry 3 --retry-delay 2) spent its
+# whole budget in about six seconds, which is shorter than a typical GitHub
+# release-asset blip - run 32473039742 burned all four attempts against a 500
+# in 5.8s and killed a 40-minute build. Without it curl backs off 1s, 2s, 4s,
+# 8s, 16s, so five retries span roughly half a minute of real outage.
+# --retry-max-time bounds the total so a genuinely dead URL still fails fast
+# enough, and --connect-timeout stops a black-holed mirror from hanging.
+CURL_RETRY=(--retry 5 --retry-all-errors --retry-max-time 180 --connect-timeout 30)
 
 # Ensure directories required for symlinks exist before package installs
 mkdir -p /var/usrlocal/bin /var/usrlocal/lib /var/roothome
