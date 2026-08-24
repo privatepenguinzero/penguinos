@@ -159,11 +159,38 @@ ostree-rechunk $target_image=image_name $tag=default_tag:
       exit 1
     fi
 
-    # You can use your own base image here to avoid pulling fedora-bootc
-    RPM_OSTREE_CHUNKER_IMAGE="quay.io/fedora/fedora-bootc:latest"
+    # You can use your own base image here to avoid pulling fedora-bootc.
+    #
+    # Pinned by digest, not :latest, because quay.io rebuilds that tag daily and
+    # `--pull=newer` therefore pulled a different chunker on every nightly run.
+    #
+    # This pin is for reproducibility, not a diagnosed cure. Runs 32567531709 and
+    # 32633696364 both died in rpmostreecxx::RpmTs::package_meta - once as
+    # "Package not found: google-noto-sans-ol-chiki-vf-fonts", once as a SIGABRT
+    # on the g_assert_not_reached() one branch further down. Both are the same
+    # underlying fault: the package list cached in the commit disagrees with the
+    # rpmdb the very same commit is queried through. What flipped it on those two
+    # days is not established - rpm-ostree has been 2026.2 since June, so the
+    # chunker version most likely did not change, which points at the image
+    # content rather than at drift. The pin is still right: it removes one axis
+    # of nightly variance, makes a failure reproducible instead of a coin flip,
+    # and matches the rule the third-party pins in build_files/build.sh follow.
+    # The thing that actually keeps a nightly shipping through this is the
+    # rechunk step being non-fatal in .github/workflows/build.yml.
+    #
+    # There is no immutable tag to use instead - :latest, :44 and :44-x86_64 are
+    # all rebuilt daily - so the digest is the pin and the tag is only there to
+    # tell Renovate which stream to follow. :44 rather than :latest because they
+    # are the same image today and naming the release makes the eventual jump to
+    # Fedora 45 a visible edit instead of a silent one. This digest is the image
+    # that produced the last green build (run 32717751140).
+    # renovate: datasource=docker depName=quay.io/fedora/fedora-bootc
+    RPM_OSTREE_CHUNKER_IMAGE="quay.io/fedora/fedora-bootc:44@sha256:b002637dc48abbb1f25f6ab0d8d0572c3b753a691d2917a3fb47a76a10d8b57d"
 
+    # --pull=missing, not --pull=newer: a digest reference is immutable, so
+    # there is never anything newer to fetch for it.
     podman run --rm \
-      --pull=newer \
+      --pull=missing \
       --privileged \
       -v "/var/lib/containers:/var/lib/containers" \
       --entrypoint /usr/bin/rpm-ostree \

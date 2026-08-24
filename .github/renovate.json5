@@ -31,6 +31,18 @@
         "#\\s*renovate:\\s*datasource=(?<datasource>[a-z-]+)\\s+depName=(?<depName>\\S+)\\s+branch=(?<currentValue>\\S+)\\s*\\n\\s*[A-Z0-9_]+_COMMIT=\"(?<currentDigest>[0-9a-f]{40})\"",
       ],
     },
+    {
+      // The rpm-ostree rechunker image in the Justfile. It is pinned as
+      // `<repo>:<tag>@sha256:<digest>`: the tag says which stream to follow and
+      // the digest is what actually gets pulled, so Renovate only has to move
+      // the digest. Kept out of the build.sh managers above because it lives in
+      // a different file and is a container, not a release tarball.
+      "customType": "regex",
+      "managerFilePatterns": ["/^Justfile$/"],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>[a-z-]+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*[A-Z0-9_]+_IMAGE=\"[^\":]+:(?<currentValue>[^\"@]+)@(?<currentDigest>sha256:[0-9a-f]{64})\"",
+      ],
+    },
   ],
 
   "packageRules": [

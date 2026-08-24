@@ -159,12 +159,36 @@ jobs:
             ${DEFAULT_TAG}
 
       # This is optional, this provides smaller delta updates
+      #
+      # Non-fatal on purpose. Rechunking is a size optimisation, not part of what
+      # the image is: an unchunked image still boots and still publishes, it just
+      # has fatter deltas. Failing the job over it meant two nightlies in one week
+      # produced nothing at all - runs 32567531709 and 32633696364 both hit the
+      # same rpm-ostree fault inside the chunker container, with nothing in this
+      # repo having changed. That fault is upstream and not yet root-caused (see
+      # the long note in the Justfile), so this step is written to degrade instead
+      # of taking the whole nightly down with it.
+      #
+      # The `just` recipe reads and writes the same tag, and podman only moves a
+      # tag once the new image is complete, so a failure part-way leaves the
+      # pre-rechunk image in place. Checked rather than assumed, because every
+      # step after this one pushes whatever that tag points at.
       - name: Rechunk with rpm-ostree
         id: rechunk
         run: |
-          sudo -E $(command -v just) ostree-rechunk \
-            ${IMAGE_NAME} \
-            ${DEFAULT_TAG}
+          if sudo -E $(command -v just) ostree-rechunk \
+               ${IMAGE_NAME} \
+               ${DEFAULT_TAG}; then
+            echo "rechunked=true" >> $GITHUB_OUTPUT
+          else
+            echo "rechunked=false" >> $GITHUB_OUTPUT
+            echo "::warning::rpm-ostree rechunk failed - publishing the unchunked image. Updates will be larger than usual until this is fixed."
+          fi
+
+          if ! sudo podman image exists "localhost/${IMAGE_NAME}:${DEFAULT_TAG}"; then
+            echo "::error::localhost/${IMAGE_NAME}:${DEFAULT_TAG} no longer exists after the rechunk step - refusing to publish."
+            exit 1
+          fi
 
       # If you are feeling adventurous, use the new distro agnostic rechunker
       # https://github.com/coreos/chunkah
