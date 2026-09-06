@@ -72,7 +72,7 @@ CORE_PKGS=(
   qemu-kvm libvirt virt-install virt-manager gnome-boxes distrobox podman-compose
   seahorse qt6-qtwayland
   cargo
-  yq bind-utils rpm-build chezmoi
+  yq bind-utils rpm-build chezmoi gh
   zsh zoxide fzf
   neovim ripgrep fd-find git-delta gitleaks xclip wl-clipboard gcc gcc-c++ make
   nodejs npm
@@ -167,10 +167,19 @@ fi
 #     golang-github-jesseduffield-lazygit; the bare name `lazygit` matches
 #     nothing in any enabled repo, so it had been silently skipped from the
 #     start.
+#
+# uupd and topgrade were in the same position as starship: bluefin:stable
+# installed them, silverblue-main does not, and Terra is the only source. uupd
+# is the one that matters - it is what kept flatpaks, brew and distrobox
+# containers updated. Losing it is quiet, because rpm-ostreed-automatic.timer
+# still stages new images, so the system looks like it is updating itself while
+# everything outside the image silently stops.
 log "Installing Terra-only CLI tools"
 TERRA_PKGS=(
   starship
   golang-github-jesseduffield-lazygit
+  uupd
+  topgrade
 )
 # A plain dnf5 install on purpose, without install_pkg_chunk: its
 # --skip-unavailable is precisely what hid both of these. A missing package
@@ -181,12 +190,15 @@ if ! dnf5 -y install "${TERRA_PKGS[@]}"; then
 fi
 # Check the binaries too, not just the transaction: an upstream rename would
 # otherwise fail this exact silent way again, one package name at a time.
-for terra_bin in starship lazygit; do
+for terra_bin in starship lazygit uupd topgrade; do
   if ! command -v "$terra_bin" >/dev/null 2>&1; then
     log "$terra_bin reported as installed but the binary is missing"
     exit 1
   fi
 done
+
+# uupd ships its own timer but does not enable it; the bluefin base did that.
+systemctl enable uupd.timer || log "Failed to enable uupd.timer"
 
 # -------------------------------------------------------------------
 # RPM Fusion repositories and multimedia codecs
@@ -1050,6 +1062,10 @@ systemctl --global enable espanso.service || log "Failed to enable espanso.servi
 install -D -m 0644 /ctx/system_files/usr/lib/udev/rules.d/91-dms-input-uaccess.rules \
     /usr/lib/udev/rules.d/91-dms-input-uaccess.rules
 
+# Homebrew lives in /var and so outlives any image change, but nothing in the
+# image puts it on PATH - the bluefin base used to. See the file for details.
+install -D -m 0644 /ctx/system_files/etc/profile.d/brew.sh /etc/profile.d/brew.sh
+
 # -------------------------------------------------------------------
 # SELinux context restoration (after all custom files are in place)
 # -------------------------------------------------------------------
@@ -1062,6 +1078,7 @@ restorecon -Rv /etc/greetd \
     /usr/lib/systemd/user/dms.service \
     /etc/systemd/user \
     /usr/lib/udev/rules.d/91-dms-input-uaccess.rules \
+    /etc/profile.d/brew.sh \
     /usr/bin/rtk \
     /usr/bin/papirus-folders \
     /usr/bin/herdr \
