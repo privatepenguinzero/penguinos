@@ -73,8 +73,8 @@ CORE_PKGS=(
   seahorse qt6-qtwayland
   cargo
   yq bind-utils rpm-build chezmoi
-  zsh zoxide fzf starship
-  neovim ripgrep fd-find lazygit git-delta gitleaks xclip wl-clipboard gcc gcc-c++ make
+  zsh zoxide fzf
+  neovim ripgrep fd-find git-delta gitleaks xclip wl-clipboard gcc gcc-c++ make
   nodejs npm
   papirus-icon-theme
   greetd
@@ -149,6 +149,44 @@ if ! dnf5 config-manager setopt terra.baseurl="https://repos.fyralabs.com/terra\
   log "Failed to pin Terra to its origin baseurl"
   exit 1
 fi
+
+# -------------------------------------------------------------------
+# CLI tools that only Terra packages
+# -------------------------------------------------------------------
+# These cannot live in CORE_PKGS. That array is installed further up, before
+# Terra is enabled, and install_pkg_chunk passes --skip-unavailable - so a
+# Terra-only name there resolves to nothing and is dropped without failing the
+# build. Both of the packages below were being skipped that way:
+#
+#   * starship was invisible until 2026-09-06 because the base was
+#     bluefin:stable, which shipped /usr/bin/starship through its bling.sh.
+#     The binary was present either way, so the skipped install never showed.
+#     Moving the base to silverblue-main removed bling, and every shell then
+#     opened with "command not found: starship" from ~/.zshrc.
+#   * lazygit was never installed at all. Terra calls it
+#     golang-github-jesseduffield-lazygit; the bare name `lazygit` matches
+#     nothing in any enabled repo, so it had been silently skipped from the
+#     start.
+log "Installing Terra-only CLI tools"
+TERRA_PKGS=(
+  starship
+  golang-github-jesseduffield-lazygit
+)
+# A plain dnf5 install on purpose, without install_pkg_chunk: its
+# --skip-unavailable is precisely what hid both of these. A missing package
+# here should stop the build, not ship a shell with no prompt.
+if ! dnf5 -y install "${TERRA_PKGS[@]}"; then
+  log "Failed to install Terra-only CLI tools"
+  exit 1
+fi
+# Check the binaries too, not just the transaction: an upstream rename would
+# otherwise fail this exact silent way again, one package name at a time.
+for terra_bin in starship lazygit; do
+  if ! command -v "$terra_bin" >/dev/null 2>&1; then
+    log "$terra_bin reported as installed but the binary is missing"
+    exit 1
+  fi
+done
 
 # -------------------------------------------------------------------
 # RPM Fusion repositories and multimedia codecs
@@ -304,9 +342,8 @@ sed -i 's/plugins=(git)/plugins=(dnf aliases genpass git zsh-autosuggestions zsh
 # prompt engines fight and the last one to run wins, unpredictably.
 #
 # Starship used to arrive with the base image, via Bluefin's bling.sh. The base
-# is silverblue-main now, which has no bling, so the package chunk near the top
-# of this script installs starship explicitly - that install is what this line
-# depends on, not the base.
+# is silverblue-main now, which has no bling, so this line depends on the
+# explicit starship install in the Terra section above - not on the base.
 sed -i 's/ZSH_THEME="robbyrussell"/ZSH_THEME=""/' /etc/skel/.zshrc
 # shellcheck disable=SC2016  # must reach .zshrc literally, like the zoxide line
 echo 'eval "$(starship init zsh)"' >> /etc/skel/.zshrc
