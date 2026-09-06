@@ -190,6 +190,69 @@ jobs:
             exit 1
           fi
 
+      # Catch a silent, environment-dependent corruption that shipped in four
+      # nightlies (2026-08-30 to 09-02) with every step reporting success.
+      #
+      # On runner image 20260823.283.1, where podman is the podman-static 5.8.4
+      # bundle, committing the build.sh RUN layer dropped the *contents* of every
+      # file that already existed in the base image and was modified in place.
+      # Files build.sh creates - every binary, dotfile and unit - were written
+      # correctly, so the image booted and niri ran. The casualties were the only
+      # two base-image files build.sh rewrites:
+      #
+      #   * /usr/share/rpm/rpmdb.sqlite reverted to the base's copy, so the image
+      #     listed 1823 packages instead of 2197. `rpm -q niri` answered "not
+      #     installed" on a system running niri, and anything reasoning about the
+      #     package set - audits, CVE scanners, rpm-ostree's own upgrade diff - was
+      #     reading the wrong list.
+      #   * /etc/dnf/repos.override.d/99-config_manager.repo kept the base's 176
+      #     bytes of content but took on the new 234-byte length, NUL-padded. dnf5
+      #     then aborted on "Missing '=' on line 8" for every invocation, so
+      #     package management was dead on arrival for anyone installing those
+      #     images.
+      #
+      # Runs that got podman 4.9.3 are unaffected, so there is no bug in this repo
+      # to fix. But the runner image rollout is gradual and has already flipped
+      # back and forth once, so the bad podman can return without warning. This
+      # step turns "quietly ships a broken image" into "fails the build".
+      #
+      # It runs after the rechunk on purpose: the rechunk rewrites the image, so
+      # the check has to inspect whatever the push step is actually going to
+      # publish, not the intermediate.
+      - name: Verify the image kept build.sh's in-place changes
+        run: |
+          set -euo pipefail
+
+          IMAGE="localhost/${IMAGE_NAME}:${DEFAULT_TAG}"
+
+          # Packages only build.sh installs - none ship in bluefin:stable. A stale
+          # rpmdb loses all of them at once, so any one would do; listing five
+          # makes the failure output say which layer of the build went missing.
+          if ! sudo podman run --rm --entrypoint /usr/bin/rpm "${IMAGE}" \
+                 -q niri ghostty brave-origin greetd dms; then
+            echo "::error::The image's rpmdb does not list packages build.sh installed - the build.sh layer's rpmdb write was lost. Refusing to publish."
+            exit 1
+          fi
+
+          # dnf5 refuses to run at all when any repo config fails to parse, so this
+          # exercises the real parser instead of pattern-matching the file. repolist
+          # is offline and takes milliseconds.
+          if ! sudo podman run --rm --entrypoint /usr/bin/dnf5 "${IMAGE}" \
+                 repolist >/dev/null; then
+            echo "::error::dnf5 cannot parse its own repo configuration inside the image - package management would be broken on every install. Refusing to publish."
+            exit 1
+          fi
+
+          # A parse check alone would not have caught the 2026-08-30 breakage from
+          # the other side: the truncated file's seven surviving lines parsed fine,
+          # it was only the NUL padding that tripped dnf5. Assert build.sh's Terra
+          # pin actually landed, which is the write that was lost.
+          if ! sudo podman run --rm --entrypoint /usr/bin/grep "${IMAGE}" \
+                 -q '^\[terra\]' /etc/dnf/repos.override.d/99-config_manager.repo; then
+            echo "::error::build.sh's Terra baseurl pin is missing from the image's dnf config - its config-manager write did not survive the layer commit. Refusing to publish."
+            exit 1
+          fi
+
       # If you are feeling adventurous, use the new distro agnostic rechunker
       # https://github.com/coreos/chunkah
       # You can delete the Rechunk with rpm-ostree portion then if you use this
