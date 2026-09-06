@@ -88,6 +88,7 @@ For a base image, you can choose any of the Universal Blue images or start from 
 - Bazzite: `ghcr.io/ublue-os/bazzite:stable`
 - Aurora: `ghcr.io/ublue-os/aurora:stable`
 - Bluefin: `ghcr.io/ublue-os/bluefin:stable`
+- Universal Blue Silverblue: `ghcr.io/ublue-os/silverblue-main:44` (what this image uses)
 - Universal Blue Base: `ghcr.io/ublue-os/base-main:latest`
 - Fedora: `quay.io/fedora/fedora-bootc:44`
 

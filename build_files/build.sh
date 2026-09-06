@@ -301,9 +301,12 @@ unset GIT_TERMINAL_PROMPT GIT_ASKPASS
 # visit through the other.
 sed -i 's/plugins=(git)/plugins=(dnf aliases genpass git zsh-autosuggestions zsh-autocomplete zsh-history-substring-search zsh-syntax-highlighting)/' /etc/skel/.zshrc
 # Starship draws the prompt, so Oh My Zsh must not draw one of its own: two
-# prompt engines fight and the last one to run wins, unpredictably. Starship
-# is already what this image gives bash (via ublue's bling.sh), so zsh gets
-# the same prompt rather than a second, different one.
+# prompt engines fight and the last one to run wins, unpredictably.
+#
+# Starship used to arrive with the base image, via Bluefin's bling.sh. The base
+# is silverblue-main now, which has no bling, so the package chunk near the top
+# of this script installs starship explicitly - that install is what this line
+# depends on, not the base.
 sed -i 's/ZSH_THEME="robbyrussell"/ZSH_THEME=""/' /etc/skel/.zshrc
 # shellcheck disable=SC2016  # must reach .zshrc literally, like the zoxide line
 echo 'eval "$(starship init zsh)"' >> /etc/skel/.zshrc

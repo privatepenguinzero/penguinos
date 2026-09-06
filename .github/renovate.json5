@@ -64,5 +64,17 @@
       "matchDepTypes": ["container"],
       "matchFileNames": [".github/workflows/**.yaml", ".github/workflows/**.yml"],
     },
+    {
+      // The base image is a floating tag on purpose - see the long note above
+      // the FROM line in the Containerfile. config:best-practices would
+      // otherwise pin it to a digest, and a pinned digest nobody bumps is
+      // precisely how Bluefin's own Fedora base got stuck on a 2026-08-07
+      // snapshot for a month and left this image a kernel behind. Leave it
+      // floating so a daily silverblue-main rebuild lands with no bot in the
+      // loop. Major bumps (44 -> 45) are unaffected and still open a PR.
+      "enabled": false,
+      "matchUpdateTypes": ["digest", "pinDigest", "pin"],
+      "matchFileNames": ["Containerfile"],
+    },
   ]
 }

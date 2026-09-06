@@ -225,7 +225,7 @@ jobs:
 
           IMAGE="localhost/${IMAGE_NAME}:${DEFAULT_TAG}"
 
-          # Packages only build.sh installs - none ship in bluefin:stable. A stale
+          # Packages only build.sh installs - none ship in the base. A stale
           # rpmdb loses all of them at once, so any one would do; listing five
           # makes the failure output say which layer of the build went missing.
           if ! sudo podman run --rm --entrypoint /usr/bin/rpm "${IMAGE}" \
