@@ -1066,6 +1066,13 @@ install -D -m 0644 /ctx/system_files/usr/lib/udev/rules.d/91-dms-input-uaccess.r
 # image puts it on PATH - the bluefin base used to. See the file for details.
 install -D -m 0644 /ctx/system_files/etc/profile.d/brew.sh /etc/profile.d/brew.sh
 
+# libvirt's own /var directories do not survive into an installed system, and
+# the ones that do are mislabelled - see the file for the full story. Recreated
+# at boot by systemd-tmpfiles instead.
+install -D -m 0644 \
+    /ctx/system_files/usr/lib/tmpfiles.d/penguinos-libvirt.conf \
+    /usr/lib/tmpfiles.d/penguinos-libvirt.conf
+
 # -------------------------------------------------------------------
 # SELinux context restoration (after all custom files are in place)
 # -------------------------------------------------------------------
@@ -1079,6 +1086,7 @@ restorecon -Rv /etc/greetd \
     /etc/systemd/user \
     /usr/lib/udev/rules.d/91-dms-input-uaccess.rules \
     /etc/profile.d/brew.sh \
+    /usr/lib/tmpfiles.d/penguinos-libvirt.conf \
     /usr/bin/rtk \
     /usr/bin/papirus-folders \
     /usr/bin/herdr \
@@ -1097,5 +1105,12 @@ systemctl enable podman.socket || log "Failed to enable podman.socket"
 log "Cleaning DNF caches"
 dnf5 -y clean all
 rm -rf /run/dnf /run/selinux-policy /var/lib/dnf
+
+# libvirt's RPMs populate /var/lib/libvirt during the build. On bootc that
+# state is machine-local and is seeded with the build's SELinux labels, not the
+# policy's virt_* types - which is what broke virtnetworkd. Ship none of it and
+# let /usr/lib/tmpfiles.d/penguinos-libvirt.conf create it correctly at boot.
+log "Dropping libvirt build-time /var state (recreated by tmpfiles at boot)"
+rm -rf /var/lib/libvirt /var/cache/libvirt
 
 log "build.sh completed successfully"
