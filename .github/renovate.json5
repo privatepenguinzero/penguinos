@@ -2,9 +2,11 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:best-practices",
+    // Shared settings for every privatepenguinzero repo: automerge minor and
+    // patch updates once status checks pass, never majors. Rules below
+    // tighten that for the tools pulled into the image by build.sh.
+    "github>privatepenguinzero/renovate-config",
   ],
-
-  "rebaseWhen": "never",
 
   // Renovate is the only dependency bot for this repo. .github/dependabot.yml
   // was removed: it could only update GitHub Actions, which Renovate already
@@ -53,10 +55,18 @@
     {
       // These tools are pulled straight from GitHub releases with no lockfile
       // behind them, so every bump changes what actually ships in the image.
-      // Keep those PRs separate and never auto-merged.
+      // Keep those PRs separate, and leave minor bumps for a human.
       "matchFileNames": ["build_files/build.sh"],
       "automerge": false,
       "separateMinorPatch": true,
+    },
+    {
+      // Patch releases of those tools are automerged, but only after the
+      // PR's build.yml run (shellcheck + full image build) goes green. A bad
+      // one that still builds is recovered with `bootc rollback`.
+      "matchFileNames": ["build_files/build.sh"],
+      "matchUpdateTypes": ["patch"],
+      "automerge": true,
     },
     {
       "enabled": false,
