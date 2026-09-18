@@ -75,7 +75,7 @@ CORE_PKGS=(
   yq bind-utils rpm-build chezmoi gh
   zsh zoxide fzf
   neovim ripgrep fd-find git-delta gitleaks xclip wl-clipboard gcc gcc-c++ make
-  nodejs npm
+  nodejs24 nodejs24-bin nodejs24-npm nodejs24-npm-bin
   papirus-icon-theme
   greetd
 )
@@ -397,7 +397,14 @@ EOF
 # -------------------------------------------------------------------
 # Claude Code CLI
 # -------------------------------------------------------------------
-# nodejs/npm come from CORE_PKGS above.
+# nodejs/npm come from CORE_PKGS above. They are the versioned nodejs24
+# packages on purpose: plain `nodejs` resolves to Fedora's default stream
+# (22 on F44), and GSD's tooling requires Node >= 24. The *-bin subpackages
+# are what provide /usr/bin/node and /usr/bin/npm.
+if [[ "$(node --version)" != v24.* ]]; then
+  log "Expected Node 24 at /usr/bin/node, got $(node --version)"
+  exit 1
+fi
 #
 # --prefix /usr is load-bearing: on ostree systems /usr/local is a symlink to
 # /var/usrlocal, and /var is machine-local state that `bootc upgrade` never
