@@ -204,11 +204,24 @@ systemctl enable uupd.timer || log "Failed to enable uupd.timer"
 # -------------------------------------------------------------------
 log "Setting up RPM Fusion"
 RPMFUSION_URL="https://mirrors.rpmfusion.org"
-if ! dnf5 -y install "$RPMFUSION_URL/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm" \
-               "$RPMFUSION_URL/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm"; then
+# The release RPMs are fetched with curl first instead of handing the URLs to
+# dnf5. dnf5 gives each mirror one 30-second attempt and then fails the whole
+# build: run 37360965896 died here after mirrors.rpmfusion.org redirected to two
+# mirrors that were both timing out. CURL_RETRY goes back through the redirector
+# on every retry, so a later attempt can land on a mirror that answers.
+RPMFUSION_DIR=$(mktemp -d)
+for repo in free nonfree; do
+  if ! curl "${CURL_RETRY[@]}" -fSL -o "$RPMFUSION_DIR/rpmfusion-$repo-release.noarch.rpm" \
+       "$RPMFUSION_URL/$repo/fedora/rpmfusion-$repo-release-$(rpm -E %fedora).noarch.rpm"; then
+    log "Failed to download the RPM Fusion $repo release package"
+    exit 1
+  fi
+done
+if ! dnf5 -y install "$RPMFUSION_DIR"/rpmfusion-*-release.noarch.rpm; then
   log "Failed to add RPM Fusion repos"
   exit 1
 fi
+rm -rf "$RPMFUSION_DIR"
 # Install multimedia packages
 if ! dnf5 -y install ffmpeg x264-libs --allowerasing; then
   log "Failed installing ffmpeg packages"
