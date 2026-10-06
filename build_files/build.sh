@@ -540,11 +540,11 @@ rm -rf "$SUPERFILE_TAR" "$SUPERFILE_CHECKSUMS" "$SUPERFILE_EXTRACT_DIR"
 # Upstream ships a single statically linked Rust binary per platform and
 # publishes no checksum file alongside it, so the artifact is verified by
 # executing it after install rather than by hash.
-# renovate: datasource=github-releases depName=ogulcancelik/herdr
-HERDR_VERSION="v0.7.5"
+# renovate: datasource=github-releases depName=herdrdev/herdr
+HERDR_VERSION="v0.9.1"
 log "Installing Herdr ${HERDR_VERSION}"
 HERDR_DOWNLOAD="/tmp/herdr-linux-x86_64"
-if ! curl "${CURL_RETRY[@]}" -fSL -o "$HERDR_DOWNLOAD" "https://github.com/ogulcancelik/herdr/releases/download/${HERDR_VERSION}/herdr-linux-x86_64"; then
+if ! curl "${CURL_RETRY[@]}" -fSL -o "$HERDR_DOWNLOAD" "https://github.com/herdrdev/herdr/releases/download/${HERDR_VERSION}/herdr-linux-x86_64"; then
   log "Failed to download Herdr"
   exit 1
 fi
